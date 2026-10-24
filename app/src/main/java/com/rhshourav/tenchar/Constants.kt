@@ -28,5 +28,19 @@ object Constants {
 
     const val PBKDF2_ITERATIONS = 600_000
 
+    /** PBKDF2 output length in bytes, before truncation to hex prefixes. */
+    const val PBKDF2_DK_BYTES = 32
+
+    /** Characters per group when a code is displayed: XXXX-XXXX-XXXX-XXXX. */
+    const val CODE_GROUP_LEN = 4
+
+    /** PBKDF2 salts. Distinct, so the room id and the auth token are unrelated. */
+    const val SALT_ROOM = "tenchar-room-v1"
+    const val SALT_AUTH = "tenchar-auth-v1"
+
+    /** Hex characters kept from each PBKDF2 output. */
+    const val ROOM_HEX_CHARS = 32
+    const val CODE_TOKEN_HEX_CHARS = 48
+
     val USER_AGENT: String = "TenChar-android/${BuildConfig.VERSION_NAME}"
 }
