@@ -103,6 +103,17 @@ class PairingTest {
     }
 
     @Test
+    fun formatPartialGroupsFiltersAndTruncates() {
+        assertEquals("", Pairing.formatPartial(""))
+        assertEquals("AB", Pairing.formatPartial("ab"))
+        assertEquals("ABCD-E", Pairing.formatPartial("abcd e"))
+        assertEquals("ABCD-EFGH", Pairing.formatPartial("ABCD-EFGH"))
+        // I, O, 0, 1 can never be valid, so they are dropped as typed.
+        assertEquals("ABCD", Pairing.formatPartial("AI0B1OCD"))
+        assertEquals("ABCD-EFGH-JKLM-NPQR", Pairing.formatPartial("abcdefghjklmnpqrstuv"))
+    }
+
+    @Test
     fun formatRejectsInvalidCode() {
         assertThrows(IllegalArgumentException::class.java) { Pairing.format("ABCD") }
     }

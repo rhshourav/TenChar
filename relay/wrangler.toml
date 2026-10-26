@@ -1,0 +1,13 @@
+name = "tenchar-relay"
+main = "src/worker.js"
+# Any date your installed wrangler supports works; nothing here depends on newer runtime behaviour.
+compatibility_date = "2025-09-01"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+# SQLite-backed Durable Object (the only kind the free plan allows).
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]

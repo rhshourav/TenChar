@@ -61,6 +61,17 @@ object Pairing {
         return code.length == Constants.CODE_LEN && code.all { it in Constants.CODE_ALPHABET }
     }
 
+    /**
+     * Formats what has been typed so far as XXXX-XXXX-..., dropping anything
+     * that can never be part of a code and anything beyond CODE_LEN symbols.
+     */
+    fun formatPartial(input: String): String =
+        normalise(input)
+            .filter { it in Constants.CODE_ALPHABET }
+            .take(Constants.CODE_LEN)
+            .chunked(Constants.CODE_GROUP_LEN)
+            .joinToString("-")
+
     /** XXXX-XXXX-XXXX-XXXX. Throws IllegalArgumentException for an invalid code. */
     fun format(input: String): String {
         require(isValid(input)) { "invalid pairing code" }

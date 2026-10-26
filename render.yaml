@@ -1,0 +1,30 @@
+# Render Blueprint for the Node build of the relay.
+# The Cloudflare Worker (relay/wrangler.toml) runs the same logic from relay/src/core.js.
+#
+# This deploys on the free plan with no disk. A free instance sleeps when idle and
+# restarts often; every restart loses ALL rooms and queued messages (pairing fails,
+# unread messages vanish). For anything beyond a trial, use a paid plan with a
+# disk: uncomment the plan, disk and DATA_DIR lines below. Check Render's current
+# plan names, prices and limits before choosing.
+services:
+  - type: web
+    name: tenchar-relay
+    runtime: node
+    rootDir: relay
+    plan: free
+    # plan: starter
+    buildCommand: npm install
+    startCommand: node src/node.js
+    healthCheckPath: /v1/health
+    autoDeploy: false
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: MAX_ROOMS
+        value: "10000"
+      # - key: DATA_DIR
+      #   value: /var/data
+    # disk:
+    #   name: relay-data
+    #   mountPath: /var/data
+    #   sizeGB: 1

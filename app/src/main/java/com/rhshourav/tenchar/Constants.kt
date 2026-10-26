@@ -31,6 +31,10 @@ object Constants {
     /** PBKDF2 output length in bytes, before truncation to hex prefixes. */
     const val PBKDF2_DK_BYTES = 32
 
+    /** Auto-lock delays. The default is AUTO_LOCK_SHORT_MS. */
+    const val AUTO_LOCK_SHORT_MS = 30_000L
+    const val AUTO_LOCK_LONG_MS = 300_000L
+
     /** Characters per group when a code is displayed: XXXX-XXXX-XXXX-XXXX. */
     const val CODE_GROUP_LEN = 4
 

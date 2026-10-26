@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="preview_banner">প্রিভিউ: এখানে কিছুই এনক্রিপ্ট বা পাঠানো হয় না।</string>
+    <string name="back">পিছনে</string>
+    <string name="cancel">বাতিল</string>
+    <string name="dialog_close">বন্ধ করুন</string>
+
+    <string name="lockreq_title">আগে স্ক্রিন লক সেট করুন</string>
+    <string name="lockreq_body">TenChar তার কী আপনার ফোনের স্ক্রিন লকের পিছনে রাখে। পিন, প্যাটার্ন বা পাসওয়ার্ড ছাড়া এটি চলবে না।</string>
+    <string name="lockreq_open">নিরাপত্তা সেটিংস খুলুন</string>
+
+    <string name="gate_title">লক করা আছে</string>
+    <string name="gate_body">আপনার কথোপকথন দেখতে আনলক করুন।</string>
+    <string name="gate_unlock">আনলক</string>
+
+    <string name="pair_title">দুটি ফোন যুক্ত করুন</string>
+    <string name="pair_body">একটি ফোনে এককালীন কোড তৈরি করুন এবং অন্যটিতে লিখুন। কোডটি একবারই কাজ করে এবং যুক্ত হওয়ার পর মুছে যায়।</string>
+    <string name="pair_make">নতুন কোড তৈরি করুন</string>
+    <string name="pair_have">আমার কাছে কোড আছে</string>
+    <string name="notice_mismatch">সংখ্যা মেলেনি। যুক্তকরণ বাতিল হয়েছে এবং এর কী মুছে ফেলা হয়েছে। আবার চেষ্টা করতে নতুন কোড তৈরি করুন।</string>
+    <string name="notice_forgotten">কথোপকথন মুছে ফেলা হয়েছে। নতুন শুরু করতে আবার যুক্ত করুন।</string>
+
+    <string name="enter_title">কোড লিখুন</string>
+    <string name="enter_invalid">কোডটি সঠিক নয়। এতে ১৬টি অক্ষর ও সংখ্যা থাকে।</string>
+    <string name="enter_join">যোগ দিন</string>
+
+    <string name="waiting_title">অন্য ফোনের অপেক্ষায়</string>
+    <string name="waiting_body">২৪ ঘণ্টার মধ্যে এই কোডটি অন্য ফোনে লিখুন। শুধু সেই ব্যক্তির সাথে শেয়ার করুন, সরাসরি অথবা আপনার বিশ্বস্ত মাধ্যমে।</string>
+    <string name="waiting_copy">কোড কপি করুন</string>
+    <string name="waiting_simulate">প্রিভিউ: ধরুন অন্য ফোন যোগ দিয়েছে</string>
+
+    <string name="verify_title">সংখ্যাটি মিলিয়ে নিন</string>
+    <string name="verify_body">দুই ফোনেই একই সংখ্যা দেখাতে হবে। সংখ্যাটি সরাসরি বা ফোনে কথা বলে মিলিয়ে নিন, এই অ্যাপের বার্তায় নয়। এই যাচাইটিই দূষিত রিলে থেকে আপনাকে রক্ষা করে।</string>
+    <string name="verify_sample_note">প্রিভিউ: এটি একটি নমুনা সংখ্যা।</string>
+    <string name="verify_match">মিলেছে</string>
+    <string name="verify_mismatch">মেলেনি</string>
+
+    <string name="chat_title">কথোপকথন</string>
+    <string name="chat_settings">সেটিংস</string>
+    <string name="chat_empty">এখনো কোনো বার্তা নেই। ১০ অক্ষর বা তার কমে কিছু লিখুন।</string>
+    <string name="chat_input_hint">সর্বোচ্চ ১০ অক্ষর</string>
+    <string name="chat_send">পাঠান</string>
+    <string name="delivery_queued">অপেক্ষমাণ</string>
+    <string name="delivery_sent">পাঠানো হয়েছে</string>
+    <string name="msg_from_you">আপনি: %1$s</string>
+    <string name="msg_from_them">অপর পক্ষ: %1$s</string>
+
+    <string name="settings_title">সেটিংস</string>
+    <string name="settings_autolock">অ্যাপ ছাড়ার পর লক</string>
+    <string name="lock_immediately">সঙ্গে সঙ্গে</string>
+    <string name="lock_30s">৩০ সেকেন্ড পর</string>
+    <string name="lock_5m">৫ মিনিট পর</string>
+    <string name="settings_show_number">যাচাইকরণ সংখ্যা দেখুন</string>
+    <string name="settings_about">পরিচিতি ও সীমাবদ্ধতা</string>
+    <string name="settings_forget">কথোপকথন মুছুন</string>
+    <string name="settings_preview_keys_reset">প্রিভিউ: কী রিসেট হয়েছে স্ক্রিনটি দেখুন</string>
+    <string name="forget_confirm_title">এই কথোপকথন মুছবেন?</string>
+    <string name="forget_confirm_body">এই ফোনের বার্তা ও কী মুছে যাবে। আবার যুক্ত করতে হবে। এটি ফেরানো যাবে না।</string>
+    <string name="forget_confirm_yes">মুছুন</string>
+
+    <string name="about_title">TenChar সম্পর্কে</string>
+    <string name="about_intro">দুজনের জন্য একটি ব্যক্তিগত মেসেঞ্জার। প্রতিটি বার্তা সর্বোচ্চ ১০ অক্ষরের।</string>
+    <string name="about_status">এটি একটি প্রিভিউ বিল্ড। স্ক্রিনগুলো কাজ করে, কিন্তু এনক্রিপশন, স্টোরেজ ও রিলে এখনো তৈরি হয়নি, তাই কিছুই সুরক্ষিত বা পাঠানো হচ্ছে না।</string>
+    <string name="about_review">ডাবল র‍্যাচেট স্ট্যান্ডার্ড প্রিমিটিভ থেকে হাতে তৈরি করা হবে। এটি স্বাধীনভাবে পর্যালোচিত হয়নি।</string>
+    <string name="about_not_title">TenChar যা থেকে রক্ষা করবে না</string>
+    <string name="about_not_1">আনলক করা ফোনে ম্যালওয়্যার বা আপসকৃত অপারেটিং সিস্টেম, স্ক্রিন রিডার এবং অনুমতিপ্রাপ্ত অ্যাক্সেসিবিলিটি সার্ভিস।</string>
+    <string name="about_not_2">আপনি যা টাইপ করেন তা রেকর্ড করে এমন থার্ড-পার্টি কিবোর্ড।</string>
+    <string name="about_not_3">মেটাডেটা: রিলে ও Cloudflare আইপি ঠিকানা, সময়, বার্তার সংখ্যা ও আকার দেখতে পারে। অ্যাপ আপনার আইপি লুকায় না।</string>
+    <string name="about_not_4">অন্য ব্যক্তি আপনার পাঠানো বার্তা রেখে দেওয়া, স্ক্রিনশট নেওয়া বা ফরোয়ার্ড করা।</string>
+    <string name="about_not_5">সার্ভিস অস্বীকার (DoS) আক্রমণ এবং রিলের উপলব্ধতা।</string>
+    <string name="about_not_6">ফোনের দুর্বল লক স্ক্রিন।</string>
+
+    <string name="keys_reset_title">কী রিসেট হয়েছে</string>
+    <string name="keys_reset_body">আপনার স্ক্রিন লক বা বায়োমেট্রিক পরিবর্তন হয়েছে, তাই এই ফোনের কী নকশা অনুযায়ীই মুছে গেছে। চালিয়ে যেতে আবার যুক্ত করুন।</string>
+    <string name="keys_reset_pair">আবার যুক্ত করুন</string>
+</resources>
