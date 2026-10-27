@@ -210,6 +210,32 @@ private fun PairScreen(vm: DemoViewModel) {
             Spacer(Modifier.height(28.dp))
         }
         HeroBlock(stringResource(R.string.pair_title), stringResource(R.string.pair_body), diameter = 132.dp)
+        Spacer(Modifier.height(28.dp))
+        RelayLink(vm)
+    }
+}
+
+/**
+ * Shows which relay will be used and lets the person change it. It sits on the
+ * pairing screens because both phones must use the same relay to find each other.
+ */
+@Composable
+private fun RelayLink(vm: DemoViewModel) {
+    var show by remember { mutableStateOf(false) }
+    GlassCard(shape = RoundedCornerShape(22.dp)) {
+        GlassRow(
+            text = stringResource(R.string.settings_relay),
+            onClick = { show = true },
+            detail = vm.relayUrl.removePrefix("https://"),
+        )
+    }
+    if (show) {
+        RelayDialog(
+            current = vm.relayUrl,
+            onSave = vm::saveRelay,
+            onReset = vm::resetRelay,
+            onDismiss = { show = false },
+        )
     }
 }
 
@@ -253,6 +279,8 @@ private fun EnterCodeScreen(vm: DemoViewModel) {
             )
         }
         CodeProgress(filled = symbols)
+        Spacer(Modifier.height(24.dp))
+        RelayLink(vm)
         if (showError) {
             Text(
                 text = stringResource(R.string.enter_invalid),
