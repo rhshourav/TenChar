@@ -99,17 +99,21 @@ jobs:
           ROOM=00000000000000000000000000000000
           echo "Testing $RELAY"
 
-          status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+          status() { curl -s --max-time 15 -o /dev/null -w '%{http_code}' "$@"; }
           expect() { # name, expected, actual
             if [ "$2" = "$3" ]; then echo "ok   $1 -> $3"; else echo "::error::$1 expected $2, got $3"; exit 1; fi
           }
 
-          # A new workers.dev URL can take a few seconds to start answering.
+          # A new workers.dev hostname (especially a freshly registered account
+          # subdomain) can take several minutes to resolve. Retry for up to 5 minutes.
+          # curl exit 6 = DNS failure, 7 = cannot connect, 35/60 = TLS problem.
           code=000
-          for i in 1 2 3 4 5 6 7 8 9 10; do
-            code=$(status "$RELAY/v1/health" || true)
+          for i in $(seq 1 30); do
+            rc=0
+            code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' "$RELAY/v1/health" 2>"$RUNNER_TEMP/curl.err") || rc=$?
             [ "$code" = "200" ] && break
-            sleep 5
+            echo "attempt $i: HTTP $code, curl exit $rc: $(cat "$RUNNER_TEMP/curl.err")"
+            sleep 10
           done
           expect "health" 200 "$code"
 
