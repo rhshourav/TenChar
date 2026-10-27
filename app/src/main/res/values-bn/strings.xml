@@ -27,6 +27,7 @@
     <string name="waiting_title">অন্য ফোনের অপেক্ষায়</string>
     <string name="waiting_body">২৪ ঘণ্টার মধ্যে এই কোডটি অন্য ফোনে লিখুন। শুধু সেই ব্যক্তির সাথে শেয়ার করুন, সরাসরি অথবা আপনার বিশ্বস্ত মাধ্যমে।</string>
     <string name="waiting_copy">কোড কপি করুন</string>
+    <string name="waiting_copied">কপি হয়েছে</string>
     <string name="waiting_simulate">প্রিভিউ: ধরুন অন্য ফোন যোগ দিয়েছে</string>
 
     <string name="verify_title">সংখ্যাটি মিলিয়ে নিন</string>

@@ -31,6 +31,7 @@
     <string name="waiting_title">Waiting for the other phone</string>
     <string name="waiting_body">Type this code on the other phone within 24 hours. Share it only with that person, in person or over a channel you trust.</string>
     <string name="waiting_copy">Copy code</string>
+    <string name="waiting_copied">Copied</string>
     <string name="waiting_simulate">Preview: pretend the other phone joined</string>
 
     <string name="verify_title">Check the number</string>

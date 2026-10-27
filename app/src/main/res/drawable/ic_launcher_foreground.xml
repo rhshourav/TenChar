@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher foreground: logo_black.png kept inside the adaptive-icon safe zone
+     (the middle 66 of 108 dp, so about 19% inset on every side). -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/logo_black"
+    android:inset="19%" />
