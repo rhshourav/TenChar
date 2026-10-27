@@ -1,14 +1,17 @@
 package com.rhshourav.tenchar.ui
 
+import android.app.Application
+import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.rhshourav.tenchar.Constants
 import com.rhshourav.tenchar.MessageLimits
 import com.rhshourav.tenchar.Pairing
+import com.rhshourav.tenchar.RelayAddress
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -43,7 +46,7 @@ object DemoData {
  * Preview only: no cryptography, no storage, no network. It exists so the
  * screens can be judged before the real implementation replaces it.
  */
-class DemoViewModel : ViewModel() {
+class DemoViewModel(application: Application) : AndroidViewModel(application) {
     var screen by mutableStateOf(Screen.Gate)
         private set
     var notice by mutableStateOf<Notice?>(null)
@@ -57,10 +60,40 @@ class DemoViewModel : ViewModel() {
     var autoLock by mutableStateOf(AutoLock.Seconds30)
         private set
 
+    /** Where the app will connect. Not a secret, but it is metadata, so it stays private to the app. */
+    var relayUrl by mutableStateOf(Constants.DEFAULT_RELAY_URL)
+        private set
+
     val messages = mutableStateListOf<ChatMessage>()
+
+    private val prefs by lazy {
+        getApplication<Application>().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    }
 
     private var stage = Stage.None
     private var nextId = 0L
+
+    init {
+        // Checked again on load, in case the stored value was edited.
+        prefs.getString(KEY_RELAY, null)?.let { RelayAddress.normalise(it) }?.let { relayUrl = it }
+    }
+
+    /** Saves a new relay address. Returns false, changing nothing, if it is not acceptable. */
+    fun saveRelay(input: String): Boolean {
+        val value = RelayAddress.normalise(input) ?: return false
+        relayUrl = value
+        if (value == Constants.DEFAULT_RELAY_URL) {
+            prefs.edit().remove(KEY_RELAY).apply()
+        } else {
+            prefs.edit().putString(KEY_RELAY, value).apply()
+        }
+        return true
+    }
+
+    fun resetRelay() {
+        relayUrl = Constants.DEFAULT_RELAY_URL
+        prefs.edit().remove(KEY_RELAY).apply()
+    }
 
     fun unlock() {
         screen = when (stage) {
@@ -180,5 +213,7 @@ class DemoViewModel : ViewModel() {
 
     private companion object {
         const val SEND_DELAY_MS = 900L
+        const val PREFS = "tenchar_settings"
+        const val KEY_RELAY = "relay_url"
     }
 }

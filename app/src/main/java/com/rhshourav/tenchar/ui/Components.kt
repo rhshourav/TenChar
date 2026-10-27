@@ -302,9 +302,9 @@ fun Bullet(text: String, color: Color = Tc.Peach) {
     }
 }
 
-/** One tappable line inside a [GlassCard], with a chevron. */
+/** One tappable line inside a [GlassCard], with a chevron and an optional smaller line under it. */
 @Composable
-fun GlassRow(text: String, onClick: () -> Unit, caution: Boolean = false) {
+fun GlassRow(text: String, onClick: () -> Unit, caution: Boolean = false, detail: String? = null) {
     val tick = rememberTick()
     Row(
         modifier = Modifier
@@ -314,15 +314,25 @@ fun GlassRow(text: String, onClick: () -> Unit, caution: Boolean = false) {
                 tick()
                 onClick()
             }
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyLarge,
-            color = if (caution) Tc.Peach else Tc.Ink,
-            modifier = Modifier.weight(1f),
-        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (caution) Tc.Peach else Tc.Ink,
+            )
+            if (detail != null) {
+                Text(
+                    text = detail,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Tc.InkMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         TcIconView(TcIcon.ChevronRight, if (caution) Tc.Peach else Tc.InkFaint, Modifier.size(20.dp))
     }
 }

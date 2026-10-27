@@ -52,6 +52,12 @@
     <string name="lock_30s">৩০ সেকেন্ড পর</string>
     <string name="lock_5m">৫ মিনিট পর</string>
     <string name="settings_show_number">যাচাইকরণ সংখ্যা দেখুন</string>
+    <string name="settings_relay">রিলে ঠিকানা</string>
+    <string name="relay_title">রিলে ঠিকানা</string>
+    <string name="relay_body">দুই ফোনেই একই রিলে ব্যবহার করতে হবে, নইলে যুক্ত হওয়া যাবে না। রিলে আপনার বার্তা পড়তে পারে না, কিন্তু আপনার আইপি ঠিকানা এবং আপনি কখন সংযুক্ত হন তা দেখতে পারে।</string>
+    <string name="relay_invalid">https দিয়ে শুরু হওয়া একটি ঠিকানা দিন, যেমন https://relay.example.com। ব্যবহারকারীর নাম, পাথ বা কোয়েরি চলবে না।</string>
+    <string name="relay_save">সংরক্ষণ</string>
+    <string name="relay_reset">ডিফল্ট রিলে ব্যবহার করুন</string>
     <string name="settings_about">পরিচিতি ও সীমাবদ্ধতা</string>
     <string name="settings_forget">কথোপকথন মুছুন</string>
     <string name="settings_preview_keys_reset">প্রিভিউ: কী রিসেট হয়েছে স্ক্রিনটি দেখুন</string>

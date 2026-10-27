@@ -26,6 +26,9 @@ object Constants {
     /** Relay request body cap in bytes. */
     const val MAX_BODY_BYTES = 512
 
+    /** The relay used until the person picks another one in Settings. */
+    const val DEFAULT_RELAY_URL = "https://tenchar-relay.onrender.com"
+
     const val PBKDF2_ITERATIONS = 600_000
 
     /** PBKDF2 output length in bytes, before truncation to hex prefixes. */

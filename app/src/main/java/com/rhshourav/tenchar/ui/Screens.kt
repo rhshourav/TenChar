@@ -664,6 +664,7 @@ private fun SendButton(count: Int, enabled: Boolean, label: String, onClick: () 
 private fun SettingsScreen(vm: DemoViewModel) {
     var showNumber by remember { mutableStateOf(false) }
     var showForget by remember { mutableStateOf(false) }
+    var showRelay by remember { mutableStateOf(false) }
     TenCharScreen(title = stringResource(R.string.settings_title), onBack = vm::back) {
         SectionTitle(stringResource(R.string.settings_autolock))
         GlassCard {
@@ -688,6 +689,12 @@ private fun SettingsScreen(vm: DemoViewModel) {
         GlassCard {
             GlassRow(stringResource(R.string.settings_show_number), { showNumber = true })
             RowDivider()
+            GlassRow(
+                text = stringResource(R.string.settings_relay),
+                onClick = { showRelay = true },
+                detail = vm.relayUrl.removePrefix("https://"),
+            )
+            RowDivider()
             GlassRow(stringResource(R.string.settings_about), { vm.open(Screen.About) })
             RowDivider()
             GlassRow(stringResource(R.string.settings_forget), { showForget = true }, caution = true)
@@ -701,6 +708,14 @@ private fun SettingsScreen(vm: DemoViewModel) {
         Spacer(Modifier.height(16.dp))
     }
 
+    if (showRelay) {
+        RelayDialog(
+            current = vm.relayUrl,
+            onSave = vm::saveRelay,
+            onReset = vm::resetRelay,
+            onDismiss = { showRelay = false },
+        )
+    }
     if (showNumber) {
         AlertDialog(
             onDismissRequest = { showNumber = false },
@@ -742,6 +757,85 @@ private fun SettingsScreen(vm: DemoViewModel) {
             },
         )
     }
+}
+
+@Composable
+private fun RelayDialog(
+    current: String,
+    onSave: (String) -> Boolean,
+    onReset: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var input by remember { mutableStateOf(current) }
+    var invalid by remember { mutableStateOf(false) }
+
+    fun save() {
+        if (onSave(input)) onDismiss() else invalid = true
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = SecureDialog,
+        containerColor = Tc.Plum,
+        titleContentColor = Tc.Ink,
+        textContentColor = Tc.InkMuted,
+        shape = RoundedCornerShape(28.dp),
+        title = { Text(stringResource(R.string.relay_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(stringResource(R.string.relay_body), style = MaterialTheme.typography.bodyMedium)
+                GlassCard(shape = RoundedCornerShape(16.dp)) {
+                    TextField(
+                        value = input,
+                        onValueChange = {
+                            input = it
+                            invalid = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyLarge,
+                        placeholder = { Text(stringResource(R.string.relay_hint)) },
+                        isError = invalid,
+                        colors = tcFieldColors(),
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.None,
+                            autoCorrectEnabled = false,
+                            keyboardType = KeyboardType.Uri,
+                            imeAction = ImeAction.Done,
+                        ),
+                        keyboardActions = KeyboardActions(onDone = { save() }),
+                    )
+                }
+                if (invalid) {
+                    Text(
+                        text = stringResource(R.string.relay_invalid),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Tc.Peach,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
+                TextButton(
+                    onClick = {
+                        onReset()
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Tc.Lavender),
+                ) { Text(stringResource(R.string.relay_reset)) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { save() },
+                colors = ButtonDefaults.textButtonColors(contentColor = Tc.Mint),
+            ) { Text(stringResource(R.string.relay_save)) }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(contentColor = Tc.Ink),
+            ) { Text(stringResource(R.string.cancel)) }
+        },
+    )
 }
 
 @Composable

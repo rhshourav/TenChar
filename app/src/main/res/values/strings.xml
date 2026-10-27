@@ -56,6 +56,13 @@
     <string name="lock_30s">After 30 seconds</string>
     <string name="lock_5m">After 5 minutes</string>
     <string name="settings_show_number">Show verification number</string>
+    <string name="settings_relay">Relay address</string>
+    <string name="relay_title">Relay address</string>
+    <string name="relay_body">Both phones must use the same relay, or they cannot pair. The relay cannot read your messages, but it can see your IP address and when you connect.</string>
+    <string name="relay_hint" translatable="false">https://relay.example.com</string>
+    <string name="relay_invalid">Enter an https address such as https://relay.example.com, with no username, path or query.</string>
+    <string name="relay_save">Save</string>
+    <string name="relay_reset">Use the default relay</string>
     <string name="settings_about">About and limits</string>
     <string name="settings_forget">Forget conversation</string>
     <string name="settings_preview_keys_reset">Preview: show the Keys were reset screen</string>
