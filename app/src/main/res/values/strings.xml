@@ -3,19 +3,32 @@
     <string name="app_name" translatable="false">TenChar</string>
     <string name="chat_counter" translatable="false">%1$d/%2$d</string>
     <string name="enter_hint" translatable="false">XXXX-XXXX-XXXX-XXXX</string>
+    <string name="relay_hint" translatable="false">https://relay.example.com</string>
 
-    <string name="preview_banner">Preview: nothing here is encrypted or sent.</string>
     <string name="back">Back</string>
     <string name="cancel">Cancel</string>
     <string name="dialog_close">Close</string>
+
+    <string name="auth_title">Unlock TenChar</string>
+    <string name="auth_body">Confirm it is you to open your conversation.</string>
 
     <string name="lockreq_title">Set a screen lock first</string>
     <string name="lockreq_body">TenChar keeps its keys behind your phone\'s screen lock. Without a PIN, pattern or password it will not run.</string>
     <string name="lockreq_open">Open security settings</string>
 
+    <string name="setup_title">Set up TenChar</string>
+    <string name="setup_body">Two quick choices before you start. You can change both later in Settings.</string>
+    <string name="setup_relays">Relays</string>
+    <string name="setup_relays_note">A relay passes encrypted messages between your phones. Using a backup relay keeps messages flowing if the main one is down, but a second relay also sees your IP address and timing.</string>
+    <string name="setup_continue">Continue</string>
+    <string name="fallback_label">Backup relay</string>
+    <string name="fallback_detail">Used if the main relay is down</string>
+    <string name="fallback_address">Backup relay address</string>
+
     <string name="gate_title">Locked</string>
     <string name="gate_body">Unlock to see your conversation.</string>
     <string name="gate_unlock">Unlock</string>
+    <string name="gate_failed">Could not unlock. Try again.</string>
 
     <string name="pair_title">Pair two phones</string>
     <string name="pair_body">Make a one-time code on one phone and type it on the other. The code works once and is deleted after pairing.</string>
@@ -23,6 +36,11 @@
     <string name="pair_have">I have a code</string>
     <string name="notice_mismatch">The numbers did not match. The pairing was cancelled and its keys were deleted. Make a new code to try again.</string>
     <string name="notice_forgotten">Conversation forgotten. Pair again to start a new one.</string>
+    <string name="notice_timeout">No phone answered with that code. Check the code, and that both phones use the same relays, then try again.</string>
+    <string name="notice_unreachable">Could not reach a relay. Check your connection and try again.</string>
+    <string name="notice_tampered">The relays gave different answers, or the other side\'s keys did not match its commitment. The pairing was cancelled for your safety.</string>
+    <string name="notice_full">That code has already been used by two phones. Make a new code.</string>
+    <string name="notice_storage">Could not save the keys on this phone. Try again.</string>
 
     <string name="enter_title">Enter the code</string>
     <string name="enter_invalid">That code is not valid. It has 16 letters and numbers.</string>
@@ -32,11 +50,11 @@
     <string name="waiting_body">Type this code on the other phone within 24 hours. Share it only with that person, in person or over a channel you trust.</string>
     <string name="waiting_copy">Copy code</string>
     <string name="waiting_copied">Copied</string>
-    <string name="waiting_simulate">Preview: pretend the other phone joined</string>
+    <string name="joining_title">Connecting</string>
+    <string name="joining_body">Checking the code and finding the other phone. The first connection can take up to a minute while a relay wakes up.</string>
 
     <string name="verify_title">Check the number</string>
     <string name="verify_body">Both phones must show the same number. Compare it by voice or in person, not by message through this app. This check is what protects you against a malicious relay.</string>
-    <string name="verify_sample_note">Preview: this is a sample number.</string>
     <string name="verify_match">Matches</string>
     <string name="verify_mismatch">Doesn\'t match</string>
 
@@ -45,6 +63,8 @@
     <string name="chat_empty">No messages yet. Say something in 10 characters or fewer.</string>
     <string name="chat_input_hint">Up to 10 characters</string>
     <string name="chat_send">Send</string>
+    <string name="chat_offline">Offline. Messages will send when a relay can be reached.</string>
+    <string name="chat_gone">The relays no longer have this conversation. You may need to pair again.</string>
     <string name="delivery_queued">Queued</string>
     <string name="delivery_sent">Sent</string>
     <string name="msg_from_you">You: %1$s</string>
@@ -59,21 +79,20 @@
     <string name="settings_relay">Relay address</string>
     <string name="relay_title">Relay address</string>
     <string name="relay_body">Both phones must use the same relay, or they cannot pair. The relay cannot read your messages, but it can see your IP address and when you connect.</string>
-    <string name="relay_hint" translatable="false">https://relay.example.com</string>
+    <string name="relay_change_note">Changing relays applies to new pairings. A conversation keeps the relays it was paired on.</string>
     <string name="relay_invalid">Enter an https address such as https://relay.example.com, with no username, path or query.</string>
     <string name="relay_save">Save</string>
     <string name="relay_reset">Use the default relay</string>
     <string name="settings_about">About and limits</string>
     <string name="settings_forget">Forget conversation</string>
-    <string name="settings_preview_keys_reset">Preview: show the Keys were reset screen</string>
     <string name="forget_confirm_title">Forget this conversation?</string>
     <string name="forget_confirm_body">Messages and keys on this phone are deleted. You will need to pair again. This cannot be undone.</string>
     <string name="forget_confirm_yes">Forget</string>
 
     <string name="about_title">About TenChar</string>
     <string name="about_intro">A private messenger for two people. Every message is at most 10 characters.</string>
-    <string name="about_status">This is a preview build. The screens work, but encryption, storage and the relay are not built yet, so nothing is protected or sent.</string>
-    <string name="about_review">The Double Ratchet will be composed by hand from standard primitives. It has not been independently reviewed.</string>
+    <string name="about_status">Every message is encrypted on your phone with a Double Ratchet, and the relay only ever holds ciphertext. There are no push notifications: messages arrive while the app is open.</string>
+    <string name="about_review">The cryptography is composed by hand from standard primitives (X25519, HKDF, AES-GCM). It is open source but has not been independently reviewed. Do not rely on it where a mistake could put someone in danger.</string>
     <string name="about_not_title">What TenChar will not protect against</string>
     <string name="about_not_1">Malware or a compromised OS on an unlocked phone, screen readers, and accessibility services with permission.</string>
     <string name="about_not_2">A third-party keyboard that records what you type.</string>

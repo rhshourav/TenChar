@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Talks to the relay over HTTPS. Nothing else leaves the phone. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- The system unlock prompt that guards the keys. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

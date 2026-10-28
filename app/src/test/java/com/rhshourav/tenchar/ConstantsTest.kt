@@ -29,6 +29,21 @@ class ConstantsTest {
     }
 
     @Test
+    fun envelopeSizesMatchTheRelay() {
+        // relay/src/constants.js: 41 + 12 + 66 + 16 = 135 bytes, 180 base64 characters.
+        assertEquals(135, Constants.ENVELOPE_BYTES)
+        assertEquals(180, Constants.ENVELOPE_B64_CHARS)
+        assertEquals(0, Constants.ENVELOPE_BYTES % 3)
+    }
+
+    @Test
+    fun relaysAreDistinctHttpsOrigins() {
+        assertTrue(Constants.DEFAULT_RELAY_URL != Constants.FALLBACK_RELAY_URL)
+        assertEquals("https://tenchar-relay.tenchar.workers.dev", Constants.FALLBACK_RELAY_URL)
+        assertTrue(Constants.SALT_KEY != Constants.SALT_ROOM && Constants.SALT_KEY != Constants.SALT_AUTH)
+    }
+
+    @Test
     fun userAgentUsesVersionName() {
         assertEquals("TenChar-android/0.1.0", Constants.USER_AGENT)
     }

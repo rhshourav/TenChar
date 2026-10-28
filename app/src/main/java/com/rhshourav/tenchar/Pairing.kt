@@ -4,6 +4,8 @@ import java.security.SecureRandom
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
 /**
@@ -15,8 +17,14 @@ object Pairing {
     /** Each symbol uses 5 bits, which is why the alphabet must have 32 symbols. */
     private const val SYMBOL_MASK = 0x1F
 
-    /** Values derived from a code. [toString] never prints them. */
-    class Derived(val room: String, val codeToken: String) {
+    /**
+     * Values derived from a code. [toString] never prints them.
+     * [room] and [codeToken] go to the relay. [codeKey] never leaves the phone:
+     * it is mixed into the handshake, so the relay cannot take part in it.
+     */
+    class Derived(val room: String, val codeToken: String, val codeKey: ByteArray) {
+        fun wipe() = codeKey.fill(0)
+
         override fun toString(): String = "Derived(redacted)"
     }
 
@@ -82,16 +90,27 @@ object Pairing {
      * PBKDF2 is deliberately slow, so it runs on a background dispatcher.
      *   room      = hex(PBKDF2(code, SALT_ROOM))[0 until ROOM_HEX_CHARS]
      *   codeToken = hex(PBKDF2(code, SALT_AUTH))[0 until CODE_TOKEN_HEX_CHARS]
+     *   codeKey   = PBKDF2(code, SALT_KEY), all PBKDF2_DK_BYTES bytes
+     * The three run in parallel.
      */
     suspend fun derive(input: String): Derived {
         require(isValid(input)) { "invalid pairing code" }
         return withContext(Dispatchers.Default) {
             val password = normalise(input).toCharArray()
             try {
-                Derived(
-                    room = hexPrefix(password, Constants.SALT_ROOM, Constants.ROOM_HEX_CHARS),
-                    codeToken = hexPrefix(password, Constants.SALT_AUTH, Constants.CODE_TOKEN_HEX_CHARS),
-                )
+                coroutineScope {
+                    val room = async { hexPrefix(password, Constants.SALT_ROOM, Constants.ROOM_HEX_CHARS) }
+                    val token = async { hexPrefix(password, Constants.SALT_AUTH, Constants.CODE_TOKEN_HEX_CHARS) }
+                    val key = async {
+                        pbkdf2Sha256(
+                            password,
+                            Constants.SALT_KEY.toByteArray(Charsets.UTF_8),
+                            Constants.PBKDF2_ITERATIONS,
+                            Constants.PBKDF2_DK_BYTES,
+                        )
+                    }
+                    Derived(room.await(), token.await(), key.await())
+                }
             } finally {
                 password.fill('\u0000')
             }

@@ -24,6 +24,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.TextFieldDefaults
@@ -51,6 +53,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.HorizontalDivider
 import com.rhshourav.tenchar.R
 
@@ -76,7 +79,6 @@ fun TenCharScreen(
         modifier = Modifier.fillMaxSize().safeDrawingPadding(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        PreviewChip()
         if (title != null) {
             Row(
                 modifier = Modifier
@@ -119,30 +121,6 @@ fun TenCharScreen(
                 content = bottomBar,
             )
         }
-    }
-}
-
-/** Says on every screen that this build protects nothing. Must stay until the crypto is real. */
-@Composable
-private fun PreviewChip() {
-    Row(
-        modifier = Modifier
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .widthIn(max = ContentMaxWidth)
-            .glass(RoundedCornerShape(16.dp))
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        GlowDot(Tc.Peach, 7.dp)
-        Spacer(Modifier.width(10.dp))
-        Text(
-            text = stringResource(R.string.preview_banner),
-            style = MaterialTheme.typography.labelMedium,
-            color = Tc.InkMuted,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
-        )
     }
 }
 
@@ -334,6 +312,46 @@ fun GlassRow(text: String, onClick: () -> Unit, caution: Boolean = false, detail
             }
         }
         TcIconView(TcIcon.ChevronRight, if (caution) Tc.Peach else Tc.InkFaint, Modifier.size(20.dp))
+    }
+}
+
+/** One toggle line inside a [GlassCard]. The whole row is the touch target. */
+@Composable
+fun GlassSwitchRow(text: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, detail: String? = null) {
+    val tick = rememberTick()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .toggleable(value = checked, role = Role.Switch) {
+                tick()
+                onCheckedChange(it)
+            }
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(text = text, style = MaterialTheme.typography.bodyLarge, color = Tc.Ink)
+            if (detail != null) {
+                Text(
+                    text = detail,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Tc.InkMuted,
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = null,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Tc.Space,
+                checkedTrackColor = Tc.Mint,
+                uncheckedThumbColor = Tc.InkMuted,
+                uncheckedTrackColor = Color.White.copy(alpha = 0.12f),
+                uncheckedBorderColor = Color.White.copy(alpha = 0.35f),
+            ),
+        )
     }
 }
 

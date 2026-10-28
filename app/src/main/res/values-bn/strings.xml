@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="preview_banner">প্রিভিউ: এখানে কিছুই এনক্রিপ্ট বা পাঠানো হয় না।</string>
     <string name="back">পিছনে</string>
     <string name="cancel">বাতিল</string>
     <string name="dialog_close">বন্ধ করুন</string>
@@ -28,11 +27,9 @@
     <string name="waiting_body">২৪ ঘণ্টার মধ্যে এই কোডটি অন্য ফোনে লিখুন। শুধু সেই ব্যক্তির সাথে শেয়ার করুন, সরাসরি অথবা আপনার বিশ্বস্ত মাধ্যমে।</string>
     <string name="waiting_copy">কোড কপি করুন</string>
     <string name="waiting_copied">কপি হয়েছে</string>
-    <string name="waiting_simulate">প্রিভিউ: ধরুন অন্য ফোন যোগ দিয়েছে</string>
 
     <string name="verify_title">সংখ্যাটি মিলিয়ে নিন</string>
     <string name="verify_body">দুই ফোনেই একই সংখ্যা দেখাতে হবে। সংখ্যাটি সরাসরি বা ফোনে কথা বলে মিলিয়ে নিন, এই অ্যাপের বার্তায় নয়। এই যাচাইটিই দূষিত রিলে থেকে আপনাকে রক্ষা করে।</string>
-    <string name="verify_sample_note">প্রিভিউ: এটি একটি নমুনা সংখ্যা।</string>
     <string name="verify_match">মিলেছে</string>
     <string name="verify_mismatch">মেলেনি</string>
 
@@ -60,15 +57,14 @@
     <string name="relay_reset">ডিফল্ট রিলে ব্যবহার করুন</string>
     <string name="settings_about">পরিচিতি ও সীমাবদ্ধতা</string>
     <string name="settings_forget">কথোপকথন মুছুন</string>
-    <string name="settings_preview_keys_reset">প্রিভিউ: কী রিসেট হয়েছে স্ক্রিনটি দেখুন</string>
     <string name="forget_confirm_title">এই কথোপকথন মুছবেন?</string>
     <string name="forget_confirm_body">এই ফোনের বার্তা ও কী মুছে যাবে। আবার যুক্ত করতে হবে। এটি ফেরানো যাবে না।</string>
     <string name="forget_confirm_yes">মুছুন</string>
 
     <string name="about_title">TenChar সম্পর্কে</string>
     <string name="about_intro">দুজনের জন্য একটি ব্যক্তিগত মেসেঞ্জার। প্রতিটি বার্তা সর্বোচ্চ ১০ অক্ষরের।</string>
-    <string name="about_status">এটি একটি প্রিভিউ বিল্ড। স্ক্রিনগুলো কাজ করে, কিন্তু এনক্রিপশন, স্টোরেজ ও রিলে এখনো তৈরি হয়নি, তাই কিছুই সুরক্ষিত বা পাঠানো হচ্ছে না।</string>
-    <string name="about_review">ডাবল র‍্যাচেট স্ট্যান্ডার্ড প্রিমিটিভ থেকে হাতে তৈরি করা হবে। এটি স্বাধীনভাবে পর্যালোচিত হয়নি।</string>
+    <string name="about_status">প্রতিটি বার্তা আপনার ফোনেই ডাবল র‍্যাচেট দিয়ে এনক্রিপ্ট হয়, আর রিলে শুধু সাইফারটেক্সট রাখে। কোনো পুশ নোটিফিকেশন নেই: অ্যাপ খোলা থাকলেই বার্তা আসে।</string>
+    <string name="about_review">ক্রিপ্টোগ্রাফি স্ট্যান্ডার্ড প্রিমিটিভ (X25519, HKDF, AES-GCM) থেকে হাতে তৈরি। এটি ওপেন সোর্স, কিন্তু স্বাধীনভাবে পর্যালোচিত হয়নি। যেখানে ভুলে কারও বিপদ হতে পারে, সেখানে এর উপর নির্ভর করবেন না।</string>
     <string name="about_not_title">TenChar যা থেকে রক্ষা করবে না</string>
     <string name="about_not_1">আনলক করা ফোনে ম্যালওয়্যার বা আপসকৃত অপারেটিং সিস্টেম, স্ক্রিন রিডার এবং অনুমতিপ্রাপ্ত অ্যাক্সেসিবিলিটি সার্ভিস।</string>
     <string name="about_not_2">আপনি যা টাইপ করেন তা রেকর্ড করে এমন থার্ড-পার্টি কিবোর্ড।</string>
@@ -80,4 +76,28 @@
     <string name="keys_reset_title">কী রিসেট হয়েছে</string>
     <string name="keys_reset_body">আপনার স্ক্রিন লক বা বায়োমেট্রিক পরিবর্তন হয়েছে, তাই এই ফোনের কী নকশা অনুযায়ীই মুছে গেছে। চালিয়ে যেতে আবার যুক্ত করুন।</string>
     <string name="keys_reset_pair">আবার যুক্ত করুন</string>
+    <string name="auth_title">TenChar আনলক করুন</string>
+    <string name="auth_body">আপনার কথোপকথন খুলতে নিশ্চিত করুন যে এটি আপনি।</string>
+    <string name="gate_failed">আনলক করা যায়নি। আবার চেষ্টা করুন।</string>
+
+    <string name="setup_title">TenChar সেট আপ করুন</string>
+    <string name="setup_body">শুরুর আগে দুটি ছোট পছন্দ। দুটিই পরে সেটিংসে বদলানো যাবে।</string>
+    <string name="setup_relays">রিলে</string>
+    <string name="setup_relays_note">রিলে আপনার দুই ফোনের মধ্যে এনক্রিপ্টেড বার্তা পৌঁছে দেয়। ব্যাকআপ রিলে থাকলে মূল রিলে বন্ধ থাকলেও বার্তা চলে, তবে দ্বিতীয় রিলেও আপনার আইপি ঠিকানা ও সময় দেখতে পায়।</string>
+    <string name="setup_continue">চালিয়ে যান</string>
+    <string name="fallback_label">ব্যাকআপ রিলে</string>
+    <string name="fallback_detail">মূল রিলে বন্ধ থাকলে ব্যবহার হয়</string>
+    <string name="fallback_address">ব্যাকআপ রিলে ঠিকানা</string>
+    <string name="relay_change_note">রিলে বদলালে তা নতুন যুক্তকরণে প্রযোজ্য হবে। চলমান কথোপকথন যে রিলেতে যুক্ত হয়েছিল সেগুলোই ব্যবহার করে।</string>
+
+    <string name="joining_title">সংযোগ হচ্ছে</string>
+    <string name="joining_body">কোড যাচাই করে অন্য ফোন খোঁজা হচ্ছে। রিলে ঘুম থেকে জাগতে প্রথম সংযোগে এক মিনিট পর্যন্ত লাগতে পারে।</string>
+    <string name="notice_timeout">ওই কোডে কোনো ফোন সাড়া দেয়নি। কোডটি এবং দুই ফোনে একই রিলে আছে কি না দেখে আবার চেষ্টা করুন।</string>
+    <string name="notice_unreachable">কোনো রিলেতে পৌঁছানো যায়নি। সংযোগ দেখে আবার চেষ্টা করুন।</string>
+    <string name="notice_tampered">রিলেগুলো ভিন্ন উত্তর দিয়েছে, অথবা অপর পক্ষের কী তার প্রতিশ্রুতির সাথে মেলেনি। নিরাপত্তার জন্য যুক্তকরণ বাতিল হয়েছে।</string>
+    <string name="notice_full">ওই কোডটি ইতিমধ্যে দুটি ফোন ব্যবহার করেছে। নতুন কোড তৈরি করুন।</string>
+    <string name="notice_storage">এই ফোনে কী সংরক্ষণ করা যায়নি। আবার চেষ্টা করুন।</string>
+
+    <string name="chat_offline">অফলাইন। রিলেতে পৌঁছানো গেলে বার্তা পাঠানো হবে।</string>
+    <string name="chat_gone">রিলেতে আর এই কথোপকথন নেই। আপনাকে হয়তো আবার যুক্ত করতে হবে।</string>
 </resources>

@@ -111,9 +111,10 @@ private val SecureDialog = DialogProperties(securePolicy = SecureFlagPolicy.Secu
 
 @Composable
 fun TenCharApp(
-    vm: DemoViewModel,
+    vm: AppViewModel,
     deviceSecure: Boolean,
     onOpenSecuritySettings: () -> Unit,
+    onUnlock: () -> Unit,
 ) {
     TenCharTheme {
         val reduceMotion = LocalReduceMotion.current
@@ -142,7 +143,8 @@ fun TenCharApp(
                     label = "screen",
                 ) { screen ->
                     when (screen) {
-                        Screen.Gate -> GateScreen(vm)
+                        Screen.Setup -> SetupScreen(vm, onUnlock)
+                        Screen.Gate -> GateScreen(vm, onUnlock)
                         Screen.Pair -> PairScreen(vm)
                         Screen.EnterCode -> EnterCodeScreen(vm)
                         Screen.Waiting -> WaitingScreen(vm)
@@ -150,7 +152,7 @@ fun TenCharApp(
                         Screen.Chat -> ChatScreen(vm)
                         Screen.Settings -> SettingsScreen(vm)
                         Screen.About -> AboutScreen(vm)
-                        Screen.KeysReset -> KeysResetScreen(vm)
+                        Screen.KeysReset -> KeysResetScreen(vm, onUnlock)
                     }
                 }
             }
@@ -170,18 +172,101 @@ private fun LockRequiredScreen(onOpenSettings: () -> Unit) {
 }
 
 @Composable
-private fun GateScreen(vm: DemoViewModel) {
+private fun GateScreen(vm: AppViewModel, onUnlock: () -> Unit) {
     TenCharScreen(
         contentArrangement = Arrangement.Center,
         contentAlignment = Alignment.CenterHorizontally,
-        bottomBar = { TcButton(stringResource(R.string.gate_unlock), vm::unlock) },
+        bottomBar = { TcButton(stringResource(R.string.gate_unlock), onUnlock, enabled = !vm.unlocking) },
     ) {
         HeroBlock(stringResource(R.string.gate_title), stringResource(R.string.gate_body))
+        if (vm.unlockFailed) {
+            Text(
+                text = stringResource(R.string.gate_failed),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Tc.Peach,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 20.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
+    }
+}
+
+/** First run only: the choices that shape how the app talks to the world. */
+@Composable
+private fun SetupScreen(vm: AppViewModel, onUnlock: () -> Unit) {
+    var showRelay by remember { mutableStateOf(false) }
+    var showFallback by remember { mutableStateOf(false) }
+    TenCharScreen(
+        bottomBar = {
+            TcButton(stringResource(R.string.setup_continue), {
+                vm.finishSetup()
+                onUnlock()
+            })
+        },
+    ) {
+        HeroBlock(
+            title = stringResource(R.string.setup_title),
+            body = stringResource(R.string.setup_body),
+            diameter = 120.dp,
+        )
+        SectionTitle(stringResource(R.string.setup_relays))
+        GlassCard {
+            GlassRow(
+                text = stringResource(R.string.settings_relay),
+                onClick = { showRelay = true },
+                detail = vm.relayUrl.removePrefix("https://"),
+            )
+            RowDivider()
+            GlassSwitchRow(
+                text = stringResource(R.string.fallback_label),
+                checked = vm.fallbackEnabled,
+                onCheckedChange = vm::setFallbackEnabled,
+                detail = stringResource(R.string.fallback_detail),
+            )
+            if (vm.fallbackEnabled) {
+                RowDivider()
+                GlassRow(
+                    text = stringResource(R.string.fallback_address),
+                    onClick = { showFallback = true },
+                    detail = vm.fallbackUrl.removePrefix("https://"),
+                )
+            }
+        }
+        Text(
+            text = stringResource(R.string.setup_relays_note),
+            style = MaterialTheme.typography.labelMedium,
+            color = Tc.InkFaint,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+        )
+        SectionTitle(stringResource(R.string.settings_autolock))
+        AutoLockCard(vm)
+        Spacer(Modifier.height(16.dp))
+    }
+    if (showRelay) {
+        RelayDialog(
+            title = stringResource(R.string.relay_title),
+            current = vm.relayUrl,
+            onSave = vm::saveRelay,
+            onReset = vm::resetRelay,
+            onDismiss = { showRelay = false },
+        )
+    }
+    if (showFallback) {
+        RelayDialog(
+            title = stringResource(R.string.fallback_address),
+            current = vm.fallbackUrl,
+            onSave = vm::saveFallback,
+            onReset = vm::resetFallback,
+            onDismiss = { showFallback = false },
+        )
     }
 }
 
 @Composable
-private fun PairScreen(vm: DemoViewModel) {
+private fun PairScreen(vm: AppViewModel) {
     TenCharScreen(
         contentArrangement = Arrangement.Center,
         contentAlignment = Alignment.CenterHorizontally,
@@ -192,7 +277,7 @@ private fun PairScreen(vm: DemoViewModel) {
     ) {
         val notice = vm.notice
         if (notice != null) {
-            val warning = notice == Notice.Mismatch
+            val warning = notice != Notice.Forgotten
             GlassCard(
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 tint = tintOf(if (warning) Tc.Peach else Tc.Lavender, 0.14f),
@@ -202,7 +287,17 @@ private fun PairScreen(vm: DemoViewModel) {
                     GlowDot(if (warning) Tc.Peach else Tc.Lavender, 8.dp, Modifier.padding(top = 9.dp))
                     Spacer(Modifier.width(14.dp))
                     Text(
-                        text = stringResource(if (warning) R.string.notice_mismatch else R.string.notice_forgotten),
+                        text = stringResource(
+                            when (notice) {
+                                Notice.Mismatch -> R.string.notice_mismatch
+                                Notice.Forgotten -> R.string.notice_forgotten
+                                Notice.Timeout -> R.string.notice_timeout
+                                Notice.Unreachable -> R.string.notice_unreachable
+                                Notice.Tampered -> R.string.notice_tampered
+                                Notice.Full -> R.string.notice_full
+                                Notice.Storage -> R.string.notice_storage
+                            },
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -220,7 +315,7 @@ private fun PairScreen(vm: DemoViewModel) {
  * pairing screens because both phones must use the same relay to find each other.
  */
 @Composable
-private fun RelayLink(vm: DemoViewModel) {
+private fun RelayLink(vm: AppViewModel) {
     var show by remember { mutableStateOf(false) }
     GlassCard(shape = RoundedCornerShape(22.dp)) {
         GlassRow(
@@ -231,6 +326,7 @@ private fun RelayLink(vm: DemoViewModel) {
     }
     if (show) {
         RelayDialog(
+            title = stringResource(R.string.relay_title),
             current = vm.relayUrl,
             onSave = vm::saveRelay,
             onReset = vm::resetRelay,
@@ -240,7 +336,7 @@ private fun RelayLink(vm: DemoViewModel) {
 }
 
 @Composable
-private fun EnterCodeScreen(vm: DemoViewModel) {
+private fun EnterCodeScreen(vm: AppViewModel) {
     val valid = Pairing.isValid(vm.entry)
     val symbols = vm.entry.count { it != '-' }
     var focused by remember { mutableStateOf(false) }
@@ -345,7 +441,7 @@ private fun CodeDot(on: Boolean) {
 }
 
 @Composable
-private fun WaitingScreen(vm: DemoViewModel) {
+private fun WaitingScreen(vm: AppViewModel) {
     val context = LocalContext.current
     val view = LocalView.current
     val code = vm.code
@@ -357,7 +453,7 @@ private fun WaitingScreen(vm: DemoViewModel) {
         }
     }
     TenCharScreen(
-        title = stringResource(R.string.waiting_title),
+        title = stringResource(if (vm.joining) R.string.joining_title else R.string.waiting_title),
         onBack = vm::back,
         bottomBar = {
             if (code != null) {
@@ -372,15 +468,10 @@ private fun WaitingScreen(vm: DemoViewModel) {
                 )
             }
             TcButton(stringResource(R.string.cancel), vm::cancelWaiting, kind = ButtonKind.Glass)
-            TextButton(
-                onClick = vm::previewOtherPhoneJoined,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.textButtonColors(contentColor = Tc.InkMuted),
-            ) { Text(stringResource(R.string.waiting_simulate)) }
         },
     ) {
         Spacer(Modifier.height(8.dp))
-        BodyText(stringResource(R.string.waiting_body))
+        BodyText(stringResource(if (vm.joining) R.string.joining_body else R.string.waiting_body))
         Spacer(Modifier.height(24.dp))
         if (code != null) {
             // XXXX-XXXX-XXXX-XXXX shown as two lines of two groups.
@@ -443,7 +534,7 @@ private fun copySensitive(context: Context, text: String) {
 }
 
 @Composable
-private fun VerifyScreen(vm: DemoViewModel) {
+private fun VerifyScreen(vm: AppViewModel) {
     TenCharScreen(
         title = stringResource(R.string.verify_title),
         bottomBar = {
@@ -454,22 +545,16 @@ private fun VerifyScreen(vm: DemoViewModel) {
         Spacer(Modifier.height(8.dp))
         BodyText(stringResource(R.string.verify_body))
         Spacer(Modifier.height(24.dp))
+        val number = vm.verification.orEmpty()
         CodeBlock(
-            lines = listOf(DemoData.SAMPLE_NUMBER),
-            spoken = DemoData.SAMPLE_NUMBER.filter { it != ' ' }.toList().joinToString(" "),
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = stringResource(R.string.verify_sample_note),
-            style = MaterialTheme.typography.labelMedium,
-            color = Tc.InkFaint,
-            modifier = Modifier.padding(horizontal = 8.dp),
+            lines = listOf(number),
+            spoken = number.filter { it != ' ' }.toList().joinToString(" "),
         )
     }
 }
 
 @Composable
-private fun ChatScreen(vm: DemoViewModel) {
+private fun ChatScreen(vm: AppViewModel) {
     val listState = rememberLazyListState()
     LaunchedEffect(vm.messages.size) {
         if (vm.messages.isNotEmpty()) listState.animateScrollToItem(vm.messages.lastIndex)
@@ -482,6 +567,7 @@ private fun ChatScreen(vm: DemoViewModel) {
         scroll = false,
         actions = { GlassChip(stringResource(R.string.chat_settings), { vm.open(Screen.Settings) }) },
     ) {
+        ConnectionBanner(vm.connection)
         if (vm.messages.isEmpty()) {
             Column(
                 Modifier.weight(1f).fillMaxWidth(),
@@ -506,6 +592,27 @@ private fun ChatScreen(vm: DemoViewModel) {
             }
         }
         Composer(vm)
+    }
+}
+
+/** Says so when no relay can be reached, or when the relays no longer hold the conversation. */
+@Composable
+private fun ConnectionBanner(connection: Connection) {
+    if (connection == Connection.Online) return
+    val gone = connection == Connection.Gone
+    GlassCard(
+        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        tint = tintOf(Tc.Peach, 0.14f),
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            GlowDot(Tc.Peach, 7.dp)
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = stringResource(if (gone) R.string.chat_gone else R.string.chat_offline),
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
     }
 }
 
@@ -571,7 +678,7 @@ private fun MessageRow(message: ChatMessage, animateIn: Boolean) {
 }
 
 @Composable
-private fun Composer(vm: DemoViewModel) {
+private fun Composer(vm: AppViewModel) {
     val view = LocalView.current
     val reduceMotion = LocalReduceMotion.current
     val scope = rememberCoroutineScope()
@@ -689,30 +796,14 @@ private fun SendButton(count: Int, enabled: Boolean, label: String, onClick: () 
 }
 
 @Composable
-private fun SettingsScreen(vm: DemoViewModel) {
+private fun SettingsScreen(vm: AppViewModel) {
     var showNumber by remember { mutableStateOf(false) }
     var showForget by remember { mutableStateOf(false) }
     var showRelay by remember { mutableStateOf(false) }
+    var showFallback by remember { mutableStateOf(false) }
     TenCharScreen(title = stringResource(R.string.settings_title), onBack = vm::back) {
         SectionTitle(stringResource(R.string.settings_autolock))
-        GlassCard {
-            Column(Modifier.selectableGroup()) {
-                AutoLock.entries.forEachIndexed { index, option ->
-                    if (index > 0) RowDivider()
-                    LockOptionRow(
-                        selected = vm.autoLock == option,
-                        label = stringResource(
-                            when (option) {
-                                AutoLock.Immediately -> R.string.lock_immediately
-                                AutoLock.Seconds30 -> R.string.lock_30s
-                                AutoLock.Minutes5 -> R.string.lock_5m
-                            },
-                        ),
-                        onSelect = { vm.chooseAutoLock(option) },
-                    )
-                }
-            }
-        }
+        AutoLockCard(vm)
         Spacer(Modifier.height(24.dp))
         GlassCard {
             GlassRow(stringResource(R.string.settings_show_number), { showNumber = true })
@@ -723,25 +814,50 @@ private fun SettingsScreen(vm: DemoViewModel) {
                 detail = vm.relayUrl.removePrefix("https://"),
             )
             RowDivider()
+            GlassSwitchRow(
+                text = stringResource(R.string.fallback_label),
+                checked = vm.fallbackEnabled,
+                onCheckedChange = vm::setFallbackEnabled,
+                detail = stringResource(R.string.fallback_detail),
+            )
+            if (vm.fallbackEnabled) {
+                RowDivider()
+                GlassRow(
+                    text = stringResource(R.string.fallback_address),
+                    onClick = { showFallback = true },
+                    detail = vm.fallbackUrl.removePrefix("https://"),
+                )
+            }
+            RowDivider()
             GlassRow(stringResource(R.string.settings_about), { vm.open(Screen.About) })
             RowDivider()
             GlassRow(stringResource(R.string.settings_forget), { showForget = true }, caution = true)
         }
-        Spacer(Modifier.height(24.dp))
-        TextButton(
-            onClick = vm::showKeysReset,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.textButtonColors(contentColor = Tc.InkMuted),
-        ) { Text(stringResource(R.string.settings_preview_keys_reset)) }
+        Text(
+            text = stringResource(R.string.relay_change_note),
+            style = MaterialTheme.typography.labelMedium,
+            color = Tc.InkFaint,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
+        )
         Spacer(Modifier.height(16.dp))
     }
 
     if (showRelay) {
         RelayDialog(
+            title = stringResource(R.string.relay_title),
             current = vm.relayUrl,
             onSave = vm::saveRelay,
             onReset = vm::resetRelay,
             onDismiss = { showRelay = false },
+        )
+    }
+    if (showFallback) {
+        RelayDialog(
+            title = stringResource(R.string.fallback_address),
+            current = vm.fallbackUrl,
+            onSave = vm::saveFallback,
+            onReset = vm::resetFallback,
+            onDismiss = { showFallback = false },
         )
     }
     if (showNumber) {
@@ -752,7 +868,7 @@ private fun SettingsScreen(vm: DemoViewModel) {
             titleContentColor = Tc.Ink,
             shape = RoundedCornerShape(28.dp),
             title = { Text(stringResource(R.string.settings_show_number)) },
-            text = { Text(DemoData.SAMPLE_NUMBER, style = CodeStyle.copy(brush = Tc.Brand)) },
+            text = { Text(vm.verification.orEmpty(), style = CodeStyle.copy(brush = Tc.Brand)) },
             confirmButton = {
                 TextButton(
                     onClick = { showNumber = false },
@@ -789,6 +905,7 @@ private fun SettingsScreen(vm: DemoViewModel) {
 
 @Composable
 private fun RelayDialog(
+    title: String,
     current: String,
     onSave: (String) -> Boolean,
     onReset: () -> Unit,
@@ -808,7 +925,7 @@ private fun RelayDialog(
         titleContentColor = Tc.Ink,
         textContentColor = Tc.InkMuted,
         shape = RoundedCornerShape(28.dp),
-        title = { Text(stringResource(R.string.relay_title)) },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(R.string.relay_body), style = MaterialTheme.typography.bodyMedium)
@@ -867,6 +984,28 @@ private fun RelayDialog(
 }
 
 @Composable
+private fun AutoLockCard(vm: AppViewModel) {
+    GlassCard {
+        Column(Modifier.selectableGroup()) {
+            AutoLock.entries.forEachIndexed { index, option ->
+                if (index > 0) RowDivider()
+                LockOptionRow(
+                    selected = vm.autoLock == option,
+                    label = stringResource(
+                        when (option) {
+                            AutoLock.Immediately -> R.string.lock_immediately
+                            AutoLock.Seconds30 -> R.string.lock_30s
+                            AutoLock.Minutes5 -> R.string.lock_5m
+                        },
+                    ),
+                    onSelect = { vm.chooseAutoLock(option) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun LockOptionRow(selected: Boolean, label: String, onSelect: () -> Unit) {
     val tick = rememberTick()
     Row(
@@ -890,7 +1029,7 @@ private fun LockOptionRow(selected: Boolean, label: String, onSelect: () -> Unit
 }
 
 @Composable
-private fun AboutScreen(vm: DemoViewModel) {
+private fun AboutScreen(vm: AppViewModel) {
     TenCharScreen(title = stringResource(R.string.about_title), onBack = vm::back) {
         Spacer(Modifier.height(8.dp))
         GlassCard {
@@ -916,11 +1055,16 @@ private fun AboutScreen(vm: DemoViewModel) {
 }
 
 @Composable
-private fun KeysResetScreen(vm: DemoViewModel) {
+private fun KeysResetScreen(vm: AppViewModel, onUnlock: () -> Unit) {
     TenCharScreen(
         contentArrangement = Arrangement.Center,
         contentAlignment = Alignment.CenterHorizontally,
-        bottomBar = { TcButton(stringResource(R.string.keys_reset_pair), vm::pairAgain) },
+        bottomBar = {
+            TcButton(stringResource(R.string.keys_reset_pair), {
+                vm.pairAgain()
+                onUnlock()
+            })
+        },
     ) {
         HeroBlock(stringResource(R.string.keys_reset_title), stringResource(R.string.keys_reset_body), halo = Tc.Peach)
     }
