@@ -223,7 +223,7 @@ private fun SetupScreen(vm: AppViewModel, onUnlock: () -> Unit) {
             GlassSwitchRow(
                 text = stringResource(R.string.fallback_label),
                 checked = vm.fallbackEnabled,
-                onCheckedChange = vm::setFallbackEnabled,
+                onCheckedChange = vm::enableFallback,
                 detail = stringResource(R.string.fallback_detail),
             )
             if (vm.fallbackEnabled) {
@@ -817,7 +817,7 @@ private fun SettingsScreen(vm: AppViewModel) {
             GlassSwitchRow(
                 text = stringResource(R.string.fallback_label),
                 checked = vm.fallbackEnabled,
-                onCheckedChange = vm::setFallbackEnabled,
+                onCheckedChange = vm::enableFallback,
                 detail = stringResource(R.string.fallback_detail),
             )
             if (vm.fallbackEnabled) {

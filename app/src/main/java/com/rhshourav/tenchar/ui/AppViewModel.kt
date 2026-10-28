@@ -159,7 +159,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().remove(KEY_FALLBACK).apply()
     }
 
-    fun setFallbackEnabled(value: Boolean) {
+    fun enableFallback(value: Boolean) {
         fallbackEnabled = value
         prefs.edit().putBoolean(KEY_FALLBACK_ON, value).apply()
     }
