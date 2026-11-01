@@ -98,6 +98,7 @@
     <string name="notice_full">ওই কোডটি ইতিমধ্যে দুটি ফোন ব্যবহার করেছে। নতুন কোড তৈরি করুন।</string>
     <string name="notice_storage">এই ফোনে কী সংরক্ষণ করা যায়নি। আবার চেষ্টা করুন।</string>
 
+    <string name="chat_limit_bytes">আর জায়গা নেই। কিছু অক্ষর বেশি জায়গা নেয়।</string>
     <string name="chat_offline">অফলাইন। রিলেতে পৌঁছানো গেলে বার্তা পাঠানো হবে।</string>
     <string name="chat_gone">রিলেতে আর এই কথোপকথন নেই। আপনাকে হয়তো আবার যুক্ত করতে হবে।</string>
 </resources>

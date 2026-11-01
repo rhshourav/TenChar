@@ -1,5 +1,6 @@
 package com.rhshourav.tenchar
 
+import com.rhshourav.tenchar.crypto.SystemRandom
 import com.rhshourav.tenchar.crypto.Handshake
 import com.rhshourav.tenchar.crypto.LocalMember
 import com.rhshourav.tenchar.crypto.Ratchet
@@ -9,14 +10,18 @@ import com.rhshourav.tenchar.store.OutboxItem
 import com.rhshourav.tenchar.store.StateCodec
 import com.rhshourav.tenchar.store.StoredMessage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.io.IOException
-import java.security.SecureRandom
 
 class StateCodecTest {
-    private val rnd = SecureRandom()
+    private val rnd = SystemRandom
 
     private fun sample(): Pair<Conversation, Ratchet> {
         val a = LocalMember.create(rnd)
@@ -94,5 +99,93 @@ class StateCodecTest {
             assertTrue("bad magic accepted", false)
         } catch (e: IOException) {
         }
+    }
+
+    // ---- standard UTF-8 strings (state version 2) ----------------------------------------------------
+
+    private fun written(text: String, max: Int = 255): ByteArray {
+        val bytes = ByteArrayOutputStream()
+        StateCodec.writeStr(DataOutputStream(bytes), text, max)
+        return bytes.toByteArray()
+    }
+
+    private fun read(bytes: ByteArray, max: Int = 255): String =
+        StateCodec.readStr(DataInputStream(ByteArrayInputStream(bytes)), max)
+
+    private fun hexOf(b: ByteArray) = Hex.encode(b)
+
+    @Test
+    fun stringsAreStandardUtf8WithAU16Length() {
+        // Standard UTF-8 for U+1F600 is F0 9F 98 80. Java's writeUTF would write six bytes (ED A0 BD ED B8 80).
+        assertEquals("0004f09f9880", hexOf(written("😀")))
+        assertEquals("0003e0a695", hexOf(written("ক")))
+        assertEquals("000100", hexOf(written("\u0000"))) // writeUTF would give C0 80
+        assertEquals("0000", hexOf(written("")))
+        assertEquals("000568656c6c6f", hexOf(written("hello")))
+        // The count is two bytes, big endian.
+        assertEquals("0100", hexOf(written("a".repeat(256), max = 300).copyOf(2)))
+        for (t in listOf("😀", "ক্ষ", "hello", "\u0000", "", "a😀b")) assertEquals(t, read(written(t)))
+    }
+
+    @Test
+    fun emojiBanglaAndTheLongestRelayAddressRoundTrip() {
+        val host = listOf(63, 63, 63, 61).joinToString(".") { "a".repeat(it) }
+        assertEquals(253, host.length)
+        val longest = RelayAddress.normalise("$host:8")!!
+        assertEquals(RelayAddress.MAX_NORMALISED_BYTES, longest.length)
+
+        val (base, peer) = sample()
+        val conv = Conversation(
+            room = base.room, memberId = base.memberId, memberToken = base.memberToken,
+            endpoints = listOf("https://tenchar-relay.onrender.com", longest),
+            ratchet = base.ratchet, verification = base.verification, verified = true,
+        )
+        conv.lastIds[longest] = 7
+        conv.messages.add(StoredMessage(1, "😀", true, Conversation.DELIVERY_SENT))
+        conv.messages.add(StoredMessage(2, "বাংলা", false, Conversation.DELIVERY_NONE))
+        conv.messages.add(StoredMessage(3, "ক্ষ".repeat(7), false, Conversation.DELIVERY_NONE)) // 63 bytes
+        conv.nextMsgId = 4
+        val back = StateCodec.decode(StateCodec.encode(conv), rnd)!!
+        assertEquals(listOf("😀", "বাংলা", "ক্ষ".repeat(7)), back.messages.map { it.text })
+        assertEquals(longest, back.endpoints[1])
+        assertEquals(7L, back.lastIds[longest])
+        assertNotNull(peer)
+    }
+
+    @Test
+    fun overlongAndMalformedStringsAreRefused() {
+        // Too long to write.
+        try { written("a".repeat(65), max = 64); assertTrue("accepted 65 bytes", false) } catch (e: IOException) {}
+        // 22 Bangla letters are 66 bytes: the limit is bytes, not characters.
+        try { written("ক".repeat(22), max = 64); assertTrue("accepted 66 bytes", false) } catch (e: IOException) {}
+        // A count over the limit on reading, even though the bytes would be valid.
+        try { read(byteArrayOf(0, 65) + ByteArray(65) { 'a'.code.toByte() }, max = 64); assertTrue("accepted", false) } catch (e: IOException) {}
+        // Malformed UTF-8: overlong NUL, a lone surrogate, a stray byte, a cut-off sequence.
+        for (bad in listOf("c080", "eda080", "ff", "e0a6", "f0", "80")) {
+            val body = Hex.decode(bad)
+            try {
+                read(byteArrayOf(0, body.size.toByte()) + body)
+                assertTrue("accepted $bad", false)
+            } catch (e: IOException) {}
+        }
+        // A count that promises more than the file holds.
+        try { read(byteArrayOf(0, 5, 'a'.code.toByte())); assertTrue("accepted a short string", false) } catch (e: java.io.EOFException) {}
+        // A message that is too long never reaches the file.
+        val (conv, _) = sample()
+        conv.messages.add(StoredMessage(9, "a".repeat(65), true, Conversation.DELIVERY_SENT))
+        try { StateCodec.encode(conv); assertTrue("encoded 65 bytes", false) } catch (e: IOException) {}
+    }
+
+    @Test
+    fun onlyVersionTwoIsAccepted() {
+        val bytes = StateCodec.encode(sample().first)
+        assertEquals(2, bytes[4].toInt()) // magic (4 bytes), then the version
+        for (version in listOf(0, 1, 3, 255)) {
+            try {
+                StateCodec.decode(bytes.copyOf().also { it[4] = version.toByte() }, rnd)
+                assertTrue("accepted version $version", false)
+            } catch (e: IOException) {}
+        }
+        assertNotNull(StateCodec.decode(bytes, rnd))
     }
 }

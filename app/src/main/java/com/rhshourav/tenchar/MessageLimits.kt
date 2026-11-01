@@ -20,6 +20,18 @@ object MessageLimits {
 
     fun utf8Length(text: String): Int = text.toByteArray(Charsets.UTF_8).size
 
+    /**
+     * How full the message is, from 0 to 1: whichever of the two limits is closer. A Bangla
+     * consonant-virama-consonant cluster is one character but 9 bytes, so the byte limit can be
+     * reached while the character counter still reads under 10. The ring and the hint use this
+     * so the person can see which limit is about to bind.
+     */
+    fun fillFraction(text: String): Float {
+        val byChars = graphemeCount(text) / Constants.MAX_CHARS.toFloat()
+        val byBytes = utf8Length(text) / Constants.MAX_UTF8_BYTES.toFloat()
+        return maxOf(byChars, byBytes).coerceIn(0f, 1f)
+    }
+
     fun fits(text: String): Boolean =
         graphemeCount(text) <= Constants.MAX_CHARS && utf8Length(text) <= Constants.MAX_UTF8_BYTES
 

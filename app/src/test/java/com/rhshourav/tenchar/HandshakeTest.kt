@@ -1,15 +1,15 @@
 package com.rhshourav.tenchar
 
+import com.rhshourav.tenchar.crypto.SystemRandom
 import com.rhshourav.tenchar.crypto.Handshake
 import com.rhshourav.tenchar.crypto.LocalMember
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.security.SecureRandom
 
 class HandshakeTest {
-    private val rnd = SecureRandom()
+    private val rnd = SystemRandom
     private val codeKey = ByteArray(32) { it.toByte() }
 
     private fun agree(me: LocalMember, peer: LocalMember, key: ByteArray = codeKey) = Handshake.agree(

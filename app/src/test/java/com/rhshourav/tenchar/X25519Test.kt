@@ -1,5 +1,6 @@
 package com.rhshourav.tenchar
 
+import com.rhshourav.tenchar.crypto.SystemRandom
 import com.rhshourav.tenchar.crypto.X25519
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -62,7 +63,7 @@ class X25519Test {
 
     @Test
     fun randomKeysAgree() {
-        val rnd = java.security.SecureRandom()
+        val rnd = SystemRandom
         repeat(20) {
             val a = X25519.generatePrivate(rnd)
             val b = X25519.generatePrivate(rnd)
@@ -74,7 +75,7 @@ class X25519Test {
 
     @Test
     fun lowOrderPointsAreRefused() {
-        val priv = X25519.generatePrivate(java.security.SecureRandom())
+        val priv = X25519.generatePrivate(SystemRandom)
         // The all-zero point and the point of order 1 both give an all-zero secret.
         assertThrows(IllegalArgumentException::class.java) { X25519.sharedSecret(priv, ByteArray(32)) }
         assertThrows(IllegalArgumentException::class.java) {

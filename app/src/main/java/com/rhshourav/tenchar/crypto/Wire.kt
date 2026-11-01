@@ -24,7 +24,10 @@ object Wire {
     private val encoder = Base64.getEncoder().withoutPadding()
     private val decoder = Base64.getDecoder()
 
-    /** A frame carrying [text], or null if it does not fit the limits or is empty. */
+    /**
+     * A frame carrying [text], or null if it is empty or over the limits (10 user-perceived
+     * characters, 64 bytes). This is where the length rule is enforced: on the way out.
+     */
     fun encodeText(text: String): ByteArray? {
         if (text.isBlank() || !MessageLimits.fits(text) || !isDisplayable(text)) return null
         val bytes = text.toByteArray(Charsets.UTF_8)
@@ -36,9 +39,15 @@ object Wire {
     }
 
     /**
-     * The text in a frame, or null if the frame is not exactly what [encodeText]
-     * makes. Strict on purpose: the peer is trusted to be honest, but a bug or a
-     * hostile peer must not be able to put odd content on this screen.
+     * The text in a frame, or null if the frame is not well formed: right type and length, zero
+     * padding, strict UTF-8, not blank, no control or bidirectional-override characters.
+     *
+     * There is deliberately no 10-character check here. The ratchet has already advanced by the
+     * time this runs, so a frame refused here is a message lost for good (the relay is told it
+     * was handled). Two platforms can count the same Bangla string differently, because their
+     * Unicode text-boundary rules differ by version, and a valid message must never vanish over
+     * that. The limit is the sender's rule, enforced by [encodeText] and the composer; the 64-byte
+     * frame already bounds how much text can arrive.
      */
     fun decodeText(frame: ByteArray): String? {
         if (frame.size != Constants.FRAME_BYTES) return null
@@ -55,7 +64,7 @@ object Wire {
         } catch (e: CharacterCodingException) {
             return null
         }
-        if (text.isBlank() || !MessageLimits.fits(text) || !isDisplayable(text)) return null
+        if (text.isBlank() || !isDisplayable(text)) return null
         return text
     }
 

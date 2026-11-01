@@ -16,6 +16,7 @@ import com.rhshourav.tenchar.RelayAddress
 import com.rhshourav.tenchar.crypto.Handshake
 import com.rhshourav.tenchar.crypto.LocalMember
 import com.rhshourav.tenchar.crypto.Ratchet
+import com.rhshourav.tenchar.crypto.SystemRandom
 import com.rhshourav.tenchar.crypto.Wire
 import com.rhshourav.tenchar.net.FailReason
 import com.rhshourav.tenchar.net.PairOutcome
@@ -39,7 +40,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.IOException
-import java.security.SecureRandom
 import javax.crypto.Cipher
 
 enum class Screen { Setup, Gate, Pair, EnterCode, Waiting, Verify, Chat, Settings, About, KeysReset }
@@ -105,7 +105,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         getApplication<Application>().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     }
     private val vault = Vault(application)
-    private val random = SecureRandom()
+    private val random = SystemRandom
     private val gate = Mutex()
     private val clients = HashMap<String, RelayClient>()
     private val retryAt = HashMap<String, Long>()
@@ -695,7 +695,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         return probe
     }
 
-    /** Decrypts one envelope. Anything that does not verify (forged, replayed, damaged, duplicate) is dropped. */
+    /**
+     * Decrypts one envelope. Anything that does not verify (forged, replayed, damaged, duplicate) is dropped.
+     * There is no 10-character check on what arrives: the sender enforces it, and a receiver that counted
+     * differently would lose a valid message for good (see [Wire.decodeText]).
+     */
     private fun receive(conv: Conversation, envelopeText: String) {
         val envelope = Wire.fromBase64(envelopeText) ?: return
         val frame = conv.ratchet.decrypt(envelope) ?: return

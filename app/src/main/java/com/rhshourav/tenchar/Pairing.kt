@@ -1,6 +1,7 @@
 package com.rhshourav.tenchar
 
-import java.security.SecureRandom
+import com.rhshourav.tenchar.crypto.RandomSource
+import com.rhshourav.tenchar.crypto.SystemRandom
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
 import kotlinx.coroutines.Dispatchers
@@ -29,7 +30,7 @@ object Pairing {
     }
 
     /** A new random code, 16 symbols with no separators. */
-    fun generate(random: SecureRandom = SecureRandom()): String {
+    fun generate(random: RandomSource = SystemRandom): String {
         val bytes = ByteArray(Constants.CODE_LEN)
         try {
             random.nextBytes(bytes)

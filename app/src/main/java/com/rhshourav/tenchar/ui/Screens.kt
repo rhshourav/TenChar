@@ -280,7 +280,7 @@ private fun PairScreen(vm: AppViewModel) {
             val warning = notice != Notice.Forgotten
             GlassCard(
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                tint = tintOf(if (warning) Tc.Peach else Tc.Lavender, 0.14f),
+                tint = tintOf(if (warning) Tc.Peach else Tc.Lavender, if (warning) Palette.TINT_CAUTION else Palette.TINT_INFO),
                 shape = RoundedCornerShape(22.dp),
             ) {
                 Row(Modifier.padding(18.dp)) {
@@ -602,7 +602,7 @@ private fun ConnectionBanner(connection: Connection) {
     val gone = connection == Connection.Gone
     GlassCard(
         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-        tint = tintOf(Tc.Peach, 0.14f),
+        tint = tintOf(Tc.Peach, Palette.TINT_CAUTION),
         shape = RoundedCornerShape(18.dp),
     ) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -639,9 +639,11 @@ private fun MessageRow(message: ChatMessage, animateIn: Boolean) {
         bottomEnd = if (message.mine) 6.dp else 22.dp,
     )
     val tint = if (message.mine) {
-        Brush.linearGradient(listOf(Tc.Indigo.copy(alpha = 0.70f), Tc.Lavender.copy(alpha = 0.34f)))
+        Brush.linearGradient(
+            listOf(Tc.Indigo.copy(alpha = Palette.BUBBLE_MINE_INDIGO), Tc.Lavender.copy(alpha = Palette.BUBBLE_MINE_LAVENDER)),
+        )
     } else {
-        tintOf(Tc.Peach, 0.07f)
+        tintOf(Tc.Peach, Palette.BUBBLE_THEIRS)
     }
     Column(
         modifier = Modifier
@@ -684,8 +686,12 @@ private fun Composer(vm: AppViewModel) {
     val scope = rememberCoroutineScope()
     val shake = remember { Animatable(0f) }
     val count = MessageLimits.graphemeCount(vm.draft)
+    val fraction = MessageLimits.fillFraction(vm.draft)
     val canSend = vm.draft.isNotBlank()
-    val atLimit = count >= Constants.MAX_CHARS
+    // Set when the 64-byte limit, not the 10-character one, refused an edit.
+    var byteLimitHit by remember { mutableStateOf(false) }
+    val showByteHint = byteLimitHit && vm.draft.isNotEmpty()
+    val atLimit = count >= Constants.MAX_CHARS || showByteHint
 
     fun send() {
         if (!canSend) return
@@ -693,69 +699,89 @@ private fun Composer(vm: AppViewModel) {
         vm.send()
     }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 8.dp, bottom = 12.dp)
-            .graphicsLayer { translationX = shake.value * density }
-            .glass(RoundedCornerShape(34.dp))
-            .padding(start = 4.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        TextField(
-            value = vm.draft,
-            onValueChange = { raw ->
-                if (!MessageLimits.fits(raw)) {
-                    // Over the limit: the text is cut, so say so with a nudge.
-                    view.performHapticFeedback(HapticFeedbackConstants.REJECT)
-                    if (!reduceMotion) {
-                        scope.launch {
-                            shake.snapTo(0f)
-                            shake.animateTo(
-                                0f,
-                                keyframes {
-                                    durationMillis = 300
-                                    -9f at 50
-                                    7f at 110
-                                    -4f at 180
-                                    2f at 240
-                                },
-                            )
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp, bottom = 12.dp)
+                .graphicsLayer { translationX = shake.value * density }
+                .glass(RoundedCornerShape(34.dp))
+                .padding(start = 4.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextField(
+                value = vm.draft,
+                onValueChange = { raw ->
+                    if (!MessageLimits.fits(raw)) {
+                        // Under 10 characters but still refused: the byte limit is what bound.
+                        byteLimitHit = MessageLimits.graphemeCount(raw) <= Constants.MAX_CHARS
+                        // Over the limit: the text is cut, so say so with a nudge.
+                        view.performHapticFeedback(HapticFeedbackConstants.REJECT)
+                        if (!reduceMotion) {
+                            scope.launch {
+                                shake.snapTo(0f)
+                                shake.animateTo(
+                                    0f,
+                                    keyframes {
+                                        durationMillis = 300
+                                        -9f at 50
+                                        7f at 110
+                                        -4f at 180
+                                        2f at 240
+                                    },
+                                )
+                            }
                         }
+                    } else {
+                        byteLimitHit = false
                     }
-                }
-                vm.onDraft(raw)
-            },
-            modifier = Modifier.weight(1f),
-            singleLine = true,
-            textStyle = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Normal),
-            placeholder = { Text(stringResource(R.string.chat_input_hint), style = MaterialTheme.typography.bodyLarge) },
-            colors = tcFieldColors(),
-            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Send),
-            keyboardActions = KeyboardActions(onSend = { send() }),
-        )
-        Text(
-            text = stringResource(R.string.chat_counter, count, Constants.MAX_CHARS),
-            style = MaterialTheme.typography.labelMedium,
-            color = if (atLimit) Tc.Peach else Tc.InkMuted,
-            modifier = Modifier.padding(horizontal = 8.dp),
-        )
-        SendButton(count = count, enabled = canSend, label = stringResource(R.string.chat_send), onClick = ::send)
+                    vm.onDraft(raw)
+                },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                textStyle = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Normal),
+                placeholder = { Text(stringResource(R.string.chat_input_hint), style = MaterialTheme.typography.bodyLarge) },
+                colors = tcFieldColors(),
+                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { send() }),
+            )
+            Text(
+                text = stringResource(R.string.chat_counter, count, Constants.MAX_CHARS),
+                style = MaterialTheme.typography.labelMedium,
+                color = if (atLimit) Tc.PeachText else Tc.InkMuted,
+                modifier = Modifier.padding(horizontal = 8.dp),
+            )
+            SendButton(fraction = fraction, enabled = canSend, label = stringResource(R.string.chat_send), onClick = ::send)
+        }
+        if (showByteHint) {
+            Text(
+                text = stringResource(R.string.chat_limit_bytes),
+                style = MaterialTheme.typography.labelMedium,
+                color = Tc.Peach,
+                modifier = Modifier
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 8.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
     }
 }
 
-/** A send button wrapped in a ring that fills as the ten characters are used. */
+/**
+ * A send button wrapped in a ring that fills as the message uses up its room. [fraction] is how close
+ * the message is to whichever limit is nearer, the 10 characters or the 64 bytes.
+ */
 @Composable
-private fun SendButton(count: Int, enabled: Boolean, label: String, onClick: () -> Unit) {
+private fun SendButton(fraction: Float, enabled: Boolean, label: String, onClick: () -> Unit) {
     val progress by animateFloatAsState(
-        targetValue = count / Constants.MAX_CHARS.toFloat(),
+        targetValue = fraction,
         animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
         label = "ring",
     )
     val ringColor by animateColorAsState(
         targetValue = when {
-            count >= Constants.MAX_CHARS -> Tc.Peach
-            count >= Constants.MAX_CHARS - 2 -> Tc.Lavender
+            fraction >= 1f -> Tc.Peach
+            fraction >= 0.8f -> Tc.Lavender
             else -> Tc.Mint
         },
         label = "ring-color",

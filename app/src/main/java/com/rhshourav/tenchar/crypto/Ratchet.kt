@@ -9,7 +9,6 @@ import java.io.DataOutputStream
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.security.GeneralSecurityException
-import java.security.SecureRandom
 
 /**
  * The Double Ratchet (Signal specification, revision 1) with X25519, HKDF-SHA256,
@@ -41,7 +40,7 @@ class Ratchet private constructor(
     private var pn: Int,
     private val skipped: LinkedHashMap<SkipKey, ByteArray>,
     private val ad: ByteArray,
-    private val random: SecureRandom,
+    private val random: RandomSource,
 ) {
     private data class SkipKey(val dh: String, val n: Int)
 
@@ -238,7 +237,7 @@ class Ratchet private constructor(
          * The phone that is the initiator in [Handshake]. [ek] is its pairing ephemeral key
          * and [peerEk] the responder's.
          */
-        fun forInitiator(sk: ByteArray, ad: ByteArray, ek: KeyPair, peerEk: ByteArray, random: SecureRandom): Ratchet {
+        fun forInitiator(sk: ByteArray, ad: ByteArray, ek: KeyPair, peerEk: ByteArray, random: RandomSource): Ratchet {
             val (rk, cks) = kdfRk(sk, X25519.sharedSecret(ek.priv, peerEk))
             return Ratchet(
                 rk, ek.priv.copyOf(), ek.pub.copyOf(), peerEk.copyOf(), cks, null, 0, 0, 0,
@@ -247,7 +246,7 @@ class Ratchet private constructor(
         }
 
         /** The responder. [peerEk] is the initiator's pairing ephemeral key. */
-        fun forResponder(sk: ByteArray, ad: ByteArray, ek: KeyPair, peerEk: ByteArray, random: SecureRandom): Ratchet {
+        fun forResponder(sk: ByteArray, ad: ByteArray, ek: KeyPair, peerEk: ByteArray, random: RandomSource): Ratchet {
             val (rk1, ckr) = kdfRk(sk, X25519.sharedSecret(ek.priv, peerEk))
             val priv = X25519.generatePrivate(random)
             val pub = X25519.publicKey(priv)
@@ -259,7 +258,7 @@ class Ratchet private constructor(
             )
         }
 
-        fun deserialize(bytes: ByteArray, random: SecureRandom): Ratchet {
+        fun deserialize(bytes: ByteArray, random: RandomSource): Ratchet {
             try {
                 val input = DataInputStream(ByteArrayInputStream(bytes))
                 if (input.readUnsignedByte() != STATE_VERSION) throw IOException("unknown ratchet state version")

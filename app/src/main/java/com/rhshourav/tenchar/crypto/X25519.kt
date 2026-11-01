@@ -1,7 +1,5 @@
 package com.rhshourav.tenchar.crypto
 
-import java.security.SecureRandom
-
 /**
  * X25519 (RFC 7748), a Kotlin port of the TweetNaCl `crypto_scalarmult` ladder.
  *
@@ -18,7 +16,7 @@ object X25519 {
     private val BASE_POINT = ByteArray(32).also { it[0] = 9 }
     private val C121665 = LongArray(16).also { it[0] = 0xDB41; it[1] = 1 }
 
-    fun generatePrivate(random: SecureRandom): ByteArray = ByteArray(KEY_BYTES).also { random.nextBytes(it) }
+    fun generatePrivate(random: RandomSource): ByteArray = ByteArray(KEY_BYTES).also { random.nextBytes(it) }
 
     fun publicKey(privateKey: ByteArray): ByteArray = scalarMult(privateKey, BASE_POINT)
 

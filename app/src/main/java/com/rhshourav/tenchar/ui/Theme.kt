@@ -24,18 +24,25 @@ import androidx.compose.ui.unit.sp
  * messenger that glows on a dark screen is also easier to use unnoticed.
  */
 object Tc {
-    val Space = Color(0xFF13141C)
-    val Plum = Color(0xFF1E1B38)
-    val Mint = Color(0xFF84F5B7)
-    val Lavender = Color(0xFFB491FE)
-    val LavenderSoft = Color(0xFFD2B8FF)
-    val Peach = Color(0xFFFFB385)
-    val Indigo = Color(0xFF5A33D3)
+    val Space = Color(Palette.SPACE)
+    val Plum = Color(Palette.PLUM)
+    val Mint = Color(Palette.MINT)
+    val Lavender = Color(Palette.LAVENDER)
+    val LavenderSoft = Color(Palette.LAVENDER_SOFT)
+    val Peach = Color(Palette.PEACH)
+    val Indigo = Color(Palette.INDIGO)
 
-    /** Text. Ink on the glass plates is above 12:1; muted is above 6:1. */
-    val Ink = Color(0xFFF4F2FF)
-    val InkMuted = Ink.copy(alpha = 0.72f)
-    val InkFaint = Ink.copy(alpha = 0.56f)
+    /** Peach for text on a glass plate; plain Peach is for dots, glows and text on the bare background. */
+    val PeachText = Color(Palette.PEACH_TEXT)
+
+    /**
+     * Text. All values live in [Palette] and are measured by ContrastTest against the aurora
+     * behind the plates: ink 4.7 : 1 or better, muted 4.5 : 1 on plates, faint 4.5 : 1 on the bare
+     * background (and 3 : 1 as a symbol on plates). Faint is for notes, never for text on a plate.
+     */
+    val Ink = Color(Palette.INK)
+    val InkMuted = Ink.copy(alpha = Palette.INK_MUTED_ALPHA)
+    val InkFaint = Ink.copy(alpha = Palette.INK_FAINT_ALPHA)
 
     val TGradient: Brush = Brush.linearGradient(listOf(Mint, Lavender))
     val CGradient: Brush = Brush.linearGradient(listOf(Peach, Indigo))

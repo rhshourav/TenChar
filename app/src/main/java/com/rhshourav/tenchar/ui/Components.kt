@@ -140,12 +140,14 @@ fun TcButton(
             .glowShadow(shape)
             .background(Tc.Brand, shape)
         ButtonKind.Glass -> Modifier.glass(shape)
-        ButtonKind.Caution -> Modifier.glass(shape, tintOf(Tc.Peach, 0.14f))
+        ButtonKind.Caution -> Modifier.glass(shape, tintOf(Tc.Peach, Palette.TINT_CAUTION))
     }
     val textColor = when (kind) {
         ButtonKind.Primary -> Tc.Space
         ButtonKind.Glass -> Tc.Ink
-        ButtonKind.Caution -> Tc.Peach
+        // Peach text on a peach-tinted plate is only about 3 : 1, so the plate's tint and edge carry the
+        // caution and the text stays ink (4.7 : 1 or better).
+        ButtonKind.Caution -> Tc.Ink
     }
     Box(
         modifier = modifier
@@ -299,7 +301,7 @@ fun GlassRow(text: String, onClick: () -> Unit, caution: Boolean = false, detail
             Text(
                 text = text,
                 style = MaterialTheme.typography.bodyLarge,
-                color = if (caution) Tc.Peach else Tc.Ink,
+                color = if (caution) Tc.PeachText else Tc.Ink,
             )
             if (detail != null) {
                 Text(
@@ -402,8 +404,9 @@ fun tcFieldColors(): TextFieldColors = TextFieldDefaults.colors(
     unfocusedIndicatorColor = Color.Transparent,
     disabledIndicatorColor = Color.Transparent,
     errorIndicatorColor = Color.Transparent,
-    focusedPlaceholderColor = Tc.InkFaint,
-    unfocusedPlaceholderColor = Tc.InkFaint,
+    // Placeholders sit on a plate, where faint is too dim to read; muted clears 4.5 : 1.
+    focusedPlaceholderColor = Tc.InkMuted,
+    unfocusedPlaceholderColor = Tc.InkMuted,
 )
 
 val EntryStyle: TextStyle = CodeStyle.copy(fontSize = 20.sp, letterSpacing = 1.sp, lineHeight = 28.sp)

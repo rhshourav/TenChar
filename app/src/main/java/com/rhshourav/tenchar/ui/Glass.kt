@@ -57,7 +57,7 @@ import kotlin.math.sin
 // ---------------------------------------------------------------------------
 
 private val GlassFill = Brush.linearGradient(
-    listOf(Color.White.copy(alpha = 0.13f), Color.White.copy(alpha = 0.05f)),
+    listOf(Color.White.copy(alpha = Palette.GLASS_FILL_LIGHT), Color.White.copy(alpha = Palette.GLASS_FILL_DARK)),
 )
 
 /** Bright on the lit corner, almost gone in the middle, a little back at the far edge. */
@@ -134,8 +134,6 @@ fun Modifier.glassClickable(enabled: Boolean, role: Role?, onClick: () -> Unit):
 // Aurora background
 // ---------------------------------------------------------------------------
 
-private const val TWO_PI = 6.2831855f
-
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.glow(
     color: Color,
     alpha: Float,
@@ -168,7 +166,7 @@ fun AuroraBackground(modifier: Modifier = Modifier) {
         rememberInfiniteTransition(label = "aurora").animateFloat(
             initialValue = 0f,
             targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(durationMillis = 60_000, easing = LinearEasing)),
+            animationSpec = infiniteRepeatable(tween(durationMillis = AuroraSpec.LOOP_MS, easing = LinearEasing)),
             label = "aurora-phase",
         )
     }
@@ -177,14 +175,10 @@ fun AuroraBackground(modifier: Modifier = Modifier) {
             .fillMaxSize()
             .background(Tc.Space)
             .drawBehind {
-                val w = size.width
-                val h = size.height
-                val a = phase.value * TWO_PI
-                glow(Tc.Plum, 1f, Offset(w * 0.5f, h * 0.45f), maxOf(w, h) * 0.95f)
-                glow(Tc.Indigo, 0.55f, Offset(w * (0.10f + 0.10f * sin(a)), h * (0.10f + 0.04f * cos(a))), w * 1.0f)
-                glow(Tc.Lavender, 0.22f, Offset(w * (0.95f - 0.10f * cos(a)), h * (0.30f + 0.05f * sin(a))), w * 0.7f)
-                glow(Tc.Peach, 0.14f, Offset(w * (0.90f + 0.06f * sin(a + 2f)), h * (0.95f - 0.04f * cos(a))), w * 0.8f)
-                glow(Tc.Mint, 0.12f, Offset(w * (0.05f + 0.08f * cos(a + 1f)), h * (0.88f + 0.04f * sin(a))), w * 0.7f)
+                // The glows are defined in AuroraSpec so ContrastTest measures what is drawn here.
+                for (g in AuroraSpec.glows(size.width, size.height, phase.value)) {
+                    glow(Color(g.color), g.alpha, Offset(g.x, g.y), g.radius)
+                }
             },
     )
 }

@@ -2,13 +2,12 @@ package com.rhshourav.tenchar.crypto
 
 import com.rhshourav.tenchar.Constants
 import com.rhshourav.tenchar.Hex
-import java.security.SecureRandom
 
 class KeyPair(val priv: ByteArray, val pub: ByteArray) {
     fun wipe() = priv.fill(0)
 
     companion object {
-        fun generate(random: SecureRandom): KeyPair {
+        fun generate(random: RandomSource): KeyPair {
             val priv = X25519.generatePrivate(random)
             return KeyPair(priv, X25519.publicKey(priv))
         }
@@ -32,7 +31,7 @@ class LocalMember(
     val commit: String,
 ) {
     companion object {
-        fun create(random: SecureRandom): LocalMember {
+        fun create(random: RandomSource): LocalMember {
             val id = ByteArray(16).also(random::nextBytes)
             val token = ByteArray(32).also(random::nextBytes)
             val keys = LocalKeys(KeyPair.generate(random), KeyPair.generate(random))

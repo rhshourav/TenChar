@@ -15,6 +15,9 @@ import java.net.URISyntaxException
  */
 object RelayAddress {
     private const val MAX_INPUT = 255
+
+    /** The longest [normalise] can return: "https://" in front of up to [MAX_INPUT] typed characters. */
+    const val MAX_NORMALISED_BYTES = "https://".length + MAX_INPUT
     private const val MAX_HOST = 253
     private const val MAX_LABEL = 63
 

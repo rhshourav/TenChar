@@ -38,9 +38,50 @@ class WireTest {
         assertNull(Wire.decodeText(good.copyOf().also { it[60] = 1 }))
         // Invalid UTF-8.
         assertNull(Wire.decodeText(good.copyOf().also { it[2] = 0xFF.toByte() }))
-        // More than ten characters inside a frame that is otherwise well formed.
-        val long = ByteArray(66).also { it[0] = 1; it[1] = 11; for (i in 0 until 11) it[2 + i] = 'a'.code.toByte() }
-        assertNull(Wire.decodeText(long))
+    }
+
+    @Test
+    fun theTenCharacterLimitIsEnforcedOnSendingOnly() {
+        // 12 letters fit in the 64-byte frame, so a receiver must accept them: the ratchet has
+        // already advanced, and refusing would lose a message for good.
+        val text = "abcdefghijkl"
+        assertNull(Wire.encodeText(text))
+        val frame = ByteArray(66).also {
+            it[0] = 1
+            it[1] = text.length.toByte()
+            text.toByteArray().copyInto(it, 2)
+        }
+        assertEquals(text, Wire.decodeText(frame))
+
+        // The full 64 bytes of text, with no spaces, is also accepted.
+        val full = "x".repeat(64)
+        val fullFrame = ByteArray(66).also { it[0] = 1; it[1] = 64; full.toByteArray().copyInto(it, 2) }
+        assertEquals(full, Wire.decodeText(fullFrame))
+    }
+
+    @Test
+    fun banglaClustersRoundTrip() {
+        // Consonant-virama-consonant clusters, with and without a vowel sign. These stay under 10 characters
+        // whichever Unicode version counts them, so encodeText accepts them everywhere.
+        for (text in listOf("ক্ষ", "স্ত্রী", "ক্ষ্ম", "বাংলা", "আমি আসছি", "শ্রী")) {
+            val frame = Wire.encodeText(text)
+            assertNotNull(text, frame)
+            assertEquals(text, Wire.decodeText(frame!!))
+        }
+        // Whatever another platform counted, a well-formed frame of Bangla text is delivered.
+        val long = "ক্ষ".repeat(7) // seven conjuncts are 63 bytes: it fits the frame whatever a platform counts them as
+        val bytes = long.toByteArray()
+        val frame = ByteArray(66).also { it[0] = 1; it[1] = bytes.size.toByte(); bytes.copyInto(it, 2) }
+        assertEquals(long, Wire.decodeText(frame))
+    }
+
+    @Test
+    fun controlAndBidiCharactersAreStillRefusedOnReceiving() {
+        for (bad in listOf("a\u0000b", "a\nb", "a\u007Fb", "a\u202Eb", "a\u2066b", "a\u200Fb", "\u0085")) {
+            val bytes = bad.toByteArray()
+            val frame = ByteArray(66).also { it[0] = 1; it[1] = bytes.size.toByte(); bytes.copyInto(it, 2) }
+            assertNull(bad, Wire.decodeText(frame))
+        }
     }
 
     @Test

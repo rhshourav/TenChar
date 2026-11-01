@@ -63,6 +63,7 @@
     <string name="chat_empty">No messages yet. Say something in 10 characters or fewer.</string>
     <string name="chat_input_hint">Up to 10 characters</string>
     <string name="chat_send">Send</string>
+    <string name="chat_limit_bytes">No more room. Some letters take extra space.</string>
     <string name="chat_offline">Offline. Messages will send when a relay can be reached.</string>
     <string name="chat_gone">The relays no longer have this conversation. You may need to pair again.</string>
     <string name="delivery_queued">Queued</string>

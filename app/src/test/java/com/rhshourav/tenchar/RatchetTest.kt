@@ -1,5 +1,6 @@
 package com.rhshourav.tenchar
 
+import com.rhshourav.tenchar.crypto.SystemRandom
 import com.rhshourav.tenchar.crypto.Handshake
 import com.rhshourav.tenchar.crypto.LocalMember
 import com.rhshourav.tenchar.crypto.Ratchet
@@ -10,10 +11,9 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.security.SecureRandom
 
 class RatchetTest {
-    private val rnd = SecureRandom()
+    private val rnd = SystemRandom
 
     /** Two phones, set up exactly as pairing does it. */
     private class Pair(val a: Ratchet, val b: Ratchet)
