@@ -519,28 +519,38 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // ---- messaging -----------------------------------------------------------------------------------
 
     fun onDraft(input: String) {
-        draft = MessageLimits.clamp(input)
+        // The composer is one logical line: a pasted line break or tab becomes a space.
+        val flat = input.replace("\r\n", " ").replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+        draft = MessageLimits.clamp(flat)
     }
 
     fun send() {
         val text = draft.trim()
         val conv = conversation ?: return
-        if (!conv.verified || text.isEmpty() || !MessageLimits.fits(text)) return
+        if (!conv.verified || text.isEmpty()) return
+        // More than one message's worth of text becomes several messages, each shown as its own bubble.
+        val pieces = MessageLimits.split(text)
+        if (pieces.isEmpty()) return
+        // Refuse rather than half-send if the queue could not take every frame (it empties as the relay accepts them).
+        if (conv.outbox.size + pieces.sumOf { Wire.frameCount(it) } > MAX_OUTBOX_FRAMES) return
         draft = ""
         viewModelScope.launch {
             gate.withLock {
                 if (conversation !== conv) return@withLock
-                val frame = Wire.encodeText(text) ?: return@withLock
-                val envelope = try {
-                    conv.ratchet.encrypt(frame)
-                } catch (e: IllegalStateException) {
-                    return@withLock
-                } finally {
-                    frame.fill(0)
+                for (piece in pieces) {
+                    val id = conv.nextMsgId++
+                    // One frame for a short message, several fragments for a longer one; the id ties them together.
+                    val frames = Wire.encodeMessage(piece, id.toInt() and 0xFFFF) ?: continue
+                    val envelopes = try {
+                        frames.map { conv.ratchet.encrypt(it) }
+                    } catch (e: IllegalStateException) {
+                        break
+                    } finally {
+                        frames.forEach { it.fill(0) }
+                    }
+                    addMessage(conv, StoredMessage(id, piece, true, Conversation.DELIVERY_QUEUED))
+                    for (envelope in envelopes) conv.outbox.add(OutboxItem(id, envelope))
                 }
-                val id = conv.nextMsgId++
-                addMessage(conv, StoredMessage(id, text, true, Conversation.DELIVERY_QUEUED))
-                conv.outbox.add(OutboxItem(id, envelope))
                 // The ratchet has moved on: save before anything is sent.
                 persist()
             }
@@ -656,8 +666,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             if (!sent) return
             conv.outbox.removeAt(0)
             item.envelope.fill(0)
-            conv.messages.firstOrNull { it.id == item.msgId }?.delivery = Conversation.DELIVERY_SENT
-            messages.firstOrNull { it.id == item.msgId }?.delivery = Delivery.Sent
+            // A long message is several envelopes; it is Sent when the last of them has been accepted.
+            if (conv.outbox.none { it.msgId == item.msgId }) {
+                conv.messages.firstOrNull { it.id == item.msgId }?.delivery = Conversation.DELIVERY_SENT
+                messages.firstOrNull { it.id == item.msgId }?.delivery = Delivery.Sent
+            }
             persist()
         }
     }
@@ -697,15 +710,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Decrypts one envelope. Anything that does not verify (forged, replayed, damaged, duplicate) is dropped.
-     * There is no 10-character check on what arrives: the sender enforces it, and a receiver that counted
+     * There is no length check on what arrives: the sender enforces it, and a receiver that counted
      * differently would lose a valid message for good (see [Wire.decodeText]).
      */
     private fun receive(conv: Conversation, envelopeText: String) {
         val envelope = Wire.fromBase64(envelopeText) ?: return
         val frame = conv.ratchet.decrypt(envelope) ?: return
-        val text = Wire.decodeText(frame)
+        val decoded = Wire.decodeFrame(frame)
         frame.fill(0)
-        if (text == null) return
+        // A whole message, or one piece of a longer one (shown once the last piece arrives).
+        val text = when (decoded) {
+            is Wire.Decoded.Text -> decoded.text
+            is Wire.Decoded.Fragment -> conv.reassembler.accept(decoded)
+            null -> null
+        } ?: return
         addMessage(conv, StoredMessage(conv.nextMsgId++, text, false, Conversation.DELIVERY_NONE))
     }
 
@@ -735,6 +753,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private companion object {
+        /** Frames waiting to go out. Ten full messages are about 350; the relay keeps 1,000 per person. */
+        const val MAX_OUTBOX_FRAMES = 1500
         const val PREFS = "tenchar_settings"
         const val KEY_RELAY = "relay_url"
         const val KEY_FALLBACK = "fallback_url"

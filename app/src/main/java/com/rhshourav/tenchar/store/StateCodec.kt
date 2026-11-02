@@ -15,6 +15,7 @@ import java.nio.CharBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 import com.rhshourav.tenchar.crypto.RandomSource
+import com.rhshourav.tenchar.crypto.Reassembler
 
 /**
  * The plaintext that [Vault] encrypts. A plain binary format, written and read
@@ -24,12 +25,13 @@ import com.rhshourav.tenchar.crypto.RandomSource
  * deliberately not DataOutputStream.writeUTF, which is Java's modified UTF-8 (U+0000 as C0 80 and
  * emoji as two 3-byte surrogates), a quirk no other implementation would reproduce.
  *
- * Version 2. Version 1 used writeUTF and was never released, so there is no migration: any other
- * version is refused, which sends the person to the "Keys were reset" screen.
+ * Version 3 (messages up to 2,048 bytes; pieces of long messages in progress). Versions 1 and 2 were
+ * development formats that were never released, so there is no migration: any other version is refused,
+ * which sends the person to the "Keys were reset" screen.
  */
 object StateCodec {
     private const val MAGIC = 0x54435331 // "TCS1"
-    private const val VERSION = 2
+    private const val VERSION = 3
     private const val MAX_OUTBOX = 2000
     private const val MAX_RATCHET_BYTES = 64 * 1024
 
@@ -100,11 +102,24 @@ object StateCodec {
             out.writeInt(conversation.messages.size)
             for (m in conversation.messages) {
                 out.writeLong(m.id)
-                writeStr(out, m.text, Constants.MAX_UTF8_BYTES)
+                writeStr(out, m.text, Constants.MAX_MESSAGE_BYTES)
                 out.writeBoolean(m.mine)
                 out.writeByte(m.delivery)
             }
             out.writeLong(conversation.nextMsgId)
+            val pending = conversation.reassembler.pending
+            out.writeByte(pending.size)
+            for (g in pending) {
+                out.writeShort(g.id)
+                out.writeByte(g.count)
+                for (part in g.parts) {
+                    out.writeBoolean(part != null)
+                    if (part != null) {
+                        out.writeByte(part.size)
+                        out.write(part)
+                    }
+                }
+            }
         }
         out.flush()
         return bytes.toByteArray()
@@ -155,15 +170,34 @@ object StateCodec {
             val messages = ArrayList<StoredMessage>(messageCount)
             repeat(messageCount) {
                 val id = input.readLong()
-                val text = readStr(input, Constants.MAX_UTF8_BYTES)
+                val text = readStr(input, Constants.MAX_MESSAGE_BYTES)
                 val mine = input.readBoolean()
                 val delivery = input.readUnsignedByte()
                 if (delivery > Conversation.DELIVERY_SENT) throw IOException("bad delivery state")
                 messages.add(StoredMessage(id, text, mine, delivery))
             }
             val nextId = input.readLong()
+            val groups = ArrayList<Reassembler.Group>()
+            val pendingCount = input.readUnsignedByte()
+            if (pendingCount > Constants.MAX_PENDING_MESSAGES) throw IOException("bad pending count")
+            repeat(pendingCount) {
+                val id = input.readUnsignedShort()
+                val count = input.readUnsignedByte()
+                if (count !in 2..Constants.MAX_FRAGMENTS) throw IOException("bad fragment count")
+                val parts = arrayOfNulls<ByteArray>(count)
+                for (i in 0 until count) {
+                    if (input.readBoolean()) {
+                        val size = input.readUnsignedByte()
+                        if (size !in 1..Constants.MAX_FRAGMENT_DATA) throw IOException("bad fragment size")
+                        parts[i] = ByteArray(size).also(input::readFully)
+                    }
+                }
+                groups += Reassembler.Group(id, count, parts)
+            }
             if (input.available() != 0) throw IOException("trailing bytes")
-            return Conversation(room, memberId, token, endpoints, ratchet, verification, verified, lastIds, outbox, messages, nextId)
+            val conversation = Conversation(room, memberId, token, endpoints, ratchet, verification, verified, lastIds, outbox, messages, nextId)
+            conversation.reassembler.restore(groups)
+            return conversation
         } catch (e: EOFException) {
             throw IOException("truncated state", e)
         }

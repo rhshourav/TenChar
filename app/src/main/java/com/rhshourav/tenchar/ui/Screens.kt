@@ -662,7 +662,9 @@ private fun MessageRow(message: ChatMessage, animateIn: Boolean) {
         Box(Modifier.widthIn(max = 300.dp).glass(shape, tint)) {
             Text(
                 text = message.text,
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium),
+                // Short messages stay large; a paragraph at that size would fill the screen.
+                style = (if (message.text.length <= 24) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge)
+                    .copy(fontWeight = FontWeight.Medium),
                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
             )
         }
@@ -688,8 +690,12 @@ private fun Composer(vm: AppViewModel) {
     val count = MessageLimits.graphemeCount(vm.draft)
     val fraction = MessageLimits.fillFraction(vm.draft)
     val canSend = vm.draft.isNotBlank()
-    // Set when the 64-byte limit, not the 10-character one, refused an edit.
+    // Set when the byte limit, not the character limit, refused an edit: the message box is full.
     var byteLimitHit by remember { mutableStateOf(false) }
+    // Text beyond one message is sent as several; say how many before it goes.
+    val messageCount = remember(vm.draft, fraction) {
+        if (fraction >= 1f) MessageLimits.split(vm.draft).size else 1
+    }
     val showByteHint = byteLimitHit && vm.draft.isNotEmpty()
     val atLimit = count >= Constants.MAX_CHARS || showByteHint
 
@@ -712,10 +718,10 @@ private fun Composer(vm: AppViewModel) {
             TextField(
                 value = vm.draft,
                 onValueChange = { raw ->
-                    if (!MessageLimits.fits(raw)) {
-                        // Under 10 characters but still refused: the byte limit is what bound.
-                        byteLimitHit = MessageLimits.graphemeCount(raw) <= Constants.MAX_CHARS
-                        // Over the limit: the text is cut, so say so with a nudge.
+                    if (!MessageLimits.fitsDraft(raw)) {
+                        // Under the character limit but still refused: the byte limit is what bound.
+                        byteLimitHit = MessageLimits.graphemeCount(raw) <= Constants.MAX_DRAFT_CHARS
+                        // The box is full: the text is cut, so say so with a nudge.
                         view.performHapticFeedback(HapticFeedbackConstants.REJECT)
                         if (!reduceMotion) {
                             scope.launch {
@@ -738,8 +744,10 @@ private fun Composer(vm: AppViewModel) {
                     vm.onDraft(raw)
                 },
                 modifier = Modifier.weight(1f),
-                singleLine = true,
-                textStyle = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Normal),
+                // Up to 500 characters in a message: let the field grow to a few lines instead of scrolling sideways.
+                singleLine = false,
+                maxLines = 4,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Normal),
                 placeholder = { Text(stringResource(R.string.chat_input_hint), style = MaterialTheme.typography.bodyLarge) },
                 colors = tcFieldColors(),
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Send),
@@ -753,11 +761,16 @@ private fun Composer(vm: AppViewModel) {
             )
             SendButton(fraction = fraction, enabled = canSend, label = stringResource(R.string.chat_send), onClick = ::send)
         }
-        if (showByteHint) {
+        val hint = when {
+            showByteHint -> stringResource(R.string.chat_limit_bytes)
+            messageCount > 1 -> stringResource(R.string.chat_split_hint, messageCount)
+            else -> null
+        }
+        if (hint != null) {
             Text(
-                text = stringResource(R.string.chat_limit_bytes),
+                text = hint,
                 style = MaterialTheme.typography.labelMedium,
-                color = Tc.Peach,
+                color = if (showByteHint) Tc.Peach else Tc.InkMuted,
                 modifier = Modifier
                     .padding(horizontal = 20.dp)
                     .padding(bottom = 8.dp)
@@ -769,7 +782,7 @@ private fun Composer(vm: AppViewModel) {
 
 /**
  * A send button wrapped in a ring that fills as the message uses up its room. [fraction] is how close
- * the message is to whichever limit is nearer, the 10 characters or the 64 bytes.
+ * the message is to whichever limit is nearer, the 500 characters or the 2,048 bytes of one message.
  */
 @Composable
 private fun SendButton(fraction: Float, enabled: Boolean, label: String, onClick: () -> Unit) {
@@ -1074,6 +1087,7 @@ private fun AboutScreen(vm: AppViewModel) {
                 Bullet(stringResource(R.string.about_not_4))
                 Bullet(stringResource(R.string.about_not_5))
                 Bullet(stringResource(R.string.about_not_6))
+                Bullet(stringResource(R.string.about_not_7))
             }
         }
         Spacer(Modifier.height(16.dp))

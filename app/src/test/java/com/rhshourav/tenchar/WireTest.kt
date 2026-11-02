@@ -8,21 +8,31 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WireTest {
+    private val acute = "́"
+
+    private fun frameOf(type: Int, len: Int, payload: ByteArray): ByteArray =
+        ByteArray(66).also { it[0] = type.toByte(); it[1] = len.toByte(); payload.copyInto(it, 2) }
+
+    private fun asText(frame: ByteArray) = (Wire.decodeFrame(frame) as? Wire.Decoded.Text)?.text
+
+    // ---- single text frames (unchanged from before) ---------------------------------------------------
+
     @Test
     fun textFrameRoundTrips() {
-        for (text in listOf("hi", "on my way", "abcdefghij", "👍👍👍👍👍👍👍👍👍👍", "আমি আসছি")) {
+        for (text in listOf("hi", "on my way", "abcdefghij", "👍👍👍👍👍👍👍👍👍👍", "আমি আসছি", "a".repeat(64))) {
             val frame = Wire.encodeText(text)
             assertNotNull(text, frame)
             assertEquals(66, frame!!.size)
             assertEquals(text, Wire.decodeText(frame))
+            assertEquals(text, asText(frame))
         }
     }
 
     @Test
-    fun refusesWhatDoesNotFit() {
+    fun aSingleFrameRefusesWhatItCannotCarry() {
         assertNull(Wire.encodeText(""))
         assertNull(Wire.encodeText("   "))
-        assertNull(Wire.encodeText("abcdefghijk"))
+        assertNull(Wire.encodeText("a".repeat(65))) // needs fragments: use encodeMessage
         assertNull(Wire.encodeText("a\u0000b"))
         assertNull(Wire.encodeText("abc\u202Edef"))
     }
@@ -34,54 +44,109 @@ class WireTest {
         assertNull(Wire.decodeText(good.copyOf().also { it[0] = 9 }))
         assertNull(Wire.decodeText(good.copyOf().also { it[1] = 0 }))
         assertNull(Wire.decodeText(good.copyOf().also { it[1] = 65.toByte() }))
-        // Non-zero padding is refused.
-        assertNull(Wire.decodeText(good.copyOf().also { it[60] = 1 }))
-        // Invalid UTF-8.
-        assertNull(Wire.decodeText(good.copyOf().also { it[2] = 0xFF.toByte() }))
+        assertNull(Wire.decodeText(good.copyOf().also { it[60] = 1 })) // non-zero padding
+        assertNull(Wire.decodeText(good.copyOf().also { it[2] = 0xFF.toByte() })) // invalid UTF-8
     }
 
     @Test
-    fun theTenCharacterLimitIsEnforcedOnSendingOnly() {
-        // 12 letters fit in the 64-byte frame, so a receiver must accept them: the ratchet has
-        // already advanced, and refusing would lose a message for good.
+    fun theSingleFrameDecoderHasNoLengthRule() {
+        // 12 letters fit in the 64-byte frame, so a receiver must accept them: the ratchet has already
+        // advanced, and refusing would lose a message for good.
         val text = "abcdefghijkl"
-        assertNull(Wire.encodeText(text))
-        val frame = ByteArray(66).also {
-            it[0] = 1
-            it[1] = text.length.toByte()
-            text.toByteArray().copyInto(it, 2)
-        }
-        assertEquals(text, Wire.decodeText(frame))
-
-        // The full 64 bytes of text, with no spaces, is also accepted.
+        assertEquals(text, Wire.decodeText(frameOf(1, text.length, text.toByteArray())))
         val full = "x".repeat(64)
-        val fullFrame = ByteArray(66).also { it[0] = 1; it[1] = 64; full.toByteArray().copyInto(it, 2) }
-        assertEquals(full, Wire.decodeText(fullFrame))
+        assertEquals(full, Wire.decodeText(frameOf(1, 64, full.toByteArray())))
     }
 
     @Test
     fun banglaClustersRoundTrip() {
-        // Consonant-virama-consonant clusters, with and without a vowel sign. These stay under 10 characters
-        // whichever Unicode version counts them, so encodeText accepts them everywhere.
         for (text in listOf("ক্ষ", "স্ত্রী", "ক্ষ্ম", "বাংলা", "আমি আসছি", "শ্রী")) {
             val frame = Wire.encodeText(text)
             assertNotNull(text, frame)
             assertEquals(text, Wire.decodeText(frame!!))
         }
-        // Whatever another platform counted, a well-formed frame of Bangla text is delivered.
-        val long = "ক্ষ".repeat(7) // seven conjuncts are 63 bytes: it fits the frame whatever a platform counts them as
-        val bytes = long.toByteArray()
-        val frame = ByteArray(66).also { it[0] = 1; it[1] = bytes.size.toByte(); bytes.copyInto(it, 2) }
-        assertEquals(long, Wire.decodeText(frame))
     }
 
     @Test
-    fun controlAndBidiCharactersAreStillRefusedOnReceiving() {
+    fun controlAndBidiCharactersAreRefusedOnReceiving() {
         for (bad in listOf("a\u0000b", "a\nb", "a\u007Fb", "a\u202Eb", "a\u2066b", "a\u200Fb", "\u0085")) {
             val bytes = bad.toByteArray()
-            val frame = ByteArray(66).also { it[0] = 1; it[1] = bytes.size.toByte(); bytes.copyInto(it, 2) }
-            assertNull(bad, Wire.decodeText(frame))
+            assertNull(bad, Wire.decodeText(frameOf(1, bytes.size, bytes)))
         }
+    }
+
+    // ---- messages that need several frames ------------------------------------------------------------
+
+    @Test
+    fun aShortMessageIsOneFrameIdenticalToBefore() {
+        for (text in listOf("hi", "on my way", "a".repeat(64), "আমি আসছি")) {
+            val frames = Wire.encodeMessage(text, group = 7)!!
+            assertEquals(1, frames.size)
+            assertTrue(frames[0].contentEquals(Wire.encodeText(text)!!))
+            assertEquals(1, Wire.frameCount(text))
+        }
+    }
+
+    @Test
+    fun aLongerMessageIsSplitIntoFullFragments() {
+        val text = "a".repeat(500)
+        val frames = Wire.encodeMessage(text, group = 0x1234)!!
+        assertEquals(9, frames.size) // 500 / 60, rounded up
+        assertEquals(frames.size, Wire.frameCount(text))
+        for ((i, f) in frames.withIndex()) {
+            assertEquals(66, f.size)
+            assertEquals(2, f[0].toInt())
+            assertEquals(0x12, f[2].toInt() and 0xFF)
+            assertEquals(0x34, f[3].toInt() and 0xFF)
+            assertEquals(i, f[4].toInt())
+            assertEquals(9, f[5].toInt())
+            val data = (f[1].toInt() and 0xFF) - 4
+            assertEquals(if (i < 8) 60 else 20, data)
+        }
+    }
+
+    @Test
+    fun theLargestMessageNeedsThirtyFiveFrames() {
+        val heavy = ("e" + acute.repeat(4)).repeat(227) // 227 characters, 2,043 bytes
+        assertEquals(35, Wire.encodeMessage(heavy, 1)!!.size)
+        assertEquals(34, Wire.encodeMessage("👍".repeat(500), 1)!!.size) // 500 characters, 2,000 bytes
+    }
+
+    @Test
+    fun encodeMessageEnforcesTheLimitsOnTheWayOut() {
+        assertNull(Wire.encodeMessage("a".repeat(501), 1))
+        assertNull(Wire.encodeMessage(("e" + acute.repeat(4)).repeat(228), 1)) // 2,052 bytes
+        assertNull(Wire.encodeMessage("  ", 1))
+        assertNull(Wire.encodeMessage("long ${"x".repeat(100)}\u202E", 1))
+        assertNotNull(Wire.encodeMessage("a".repeat(500), 1))
+    }
+
+    @Test
+    fun onlyTheLow16BitsOfTheGroupAreUsed() {
+        val f = Wire.encodeMessage("a".repeat(100), group = 0x1ABCD)!!
+        assertEquals(0xAB, f[0][2].toInt() and 0xFF)
+        assertEquals(0xCD, f[0][3].toInt() and 0xFF)
+    }
+
+    @Test
+    fun fragmentDecodingIsStrict() {
+        val frames = Wire.encodeMessage("a".repeat(130), group = 5)!! // 3 fragments: 60, 60, 10
+        val first = Wire.decodeFrame(frames[0]) as Wire.Decoded.Fragment
+        assertEquals(5, first.group); assertEquals(0, first.index); assertEquals(3, first.count); assertEquals(60, first.data.size)
+        val last = Wire.decodeFrame(frames[2]) as Wire.Decoded.Fragment
+        assertEquals(10, last.data.size)
+
+        fun mutate(i: Int, change: (ByteArray) -> Unit) = assertNull("fragment $i", Wire.decodeFrame(frames[i].copyOf().also(change)))
+        mutate(0) { it[0] = 3 } // unknown type
+        mutate(0) { it[1] = 4 } // header only, no data
+        mutate(0) { it[1] = 65 } // longer than a frame can hold
+        mutate(0) { it[5] = 1 } // a single "fragment" is not a fragment
+        mutate(0) { it[5] = 36 } // more pieces than any message needs
+        mutate(0) { it[4] = 3 } // index not below count
+        mutate(0) { it[1] = 50 } // a middle piece that is not full
+        mutate(2) { it[65] = 1 } // non-zero padding
+        mutate(2) { it[1] = 4 } // empty last piece
+        assertNull(Wire.decodeFrame(frames[0].copyOf(65)))
     }
 
     @Test

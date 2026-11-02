@@ -60,10 +60,11 @@
 
     <string name="chat_title">Conversation</string>
     <string name="chat_settings">Settings</string>
-    <string name="chat_empty">No messages yet. Say something in 10 characters or fewer.</string>
-    <string name="chat_input_hint">Up to 10 characters</string>
+    <string name="chat_empty">No messages yet. Say hello.</string>
+    <string name="chat_input_hint">Write a message</string>
     <string name="chat_send">Send</string>
-    <string name="chat_limit_bytes">No more room. Some letters take extra space.</string>
+    <string name="chat_limit_bytes">The message box is full. Send it, then keep writing.</string>
+    <string name="chat_split_hint">Too long for one message. It will be sent as %1$d messages.</string>
     <string name="chat_offline">Offline. Messages will send when a relay can be reached.</string>
     <string name="chat_gone">The relays no longer have this conversation. You may need to pair again.</string>
     <string name="delivery_queued">Queued</string>
@@ -91,7 +92,7 @@
     <string name="forget_confirm_yes">Forget</string>
 
     <string name="about_title">About TenChar</string>
-    <string name="about_intro">A private messenger for two people. Every message is at most 10 characters.</string>
+    <string name="about_intro">A private messenger for two people. A message can be up to 500 characters; longer text is sent as several messages.</string>
     <string name="about_status">Every message is encrypted on your phone with a Double Ratchet, and the relay only ever holds ciphertext. There are no push notifications: messages arrive while the app is open.</string>
     <string name="about_review">The cryptography is composed by hand from standard primitives (X25519, HKDF, AES-GCM). It is open source but has not been independently reviewed. Do not rely on it where a mistake could put someone in danger.</string>
     <string name="about_not_title">What TenChar will not protect against</string>
@@ -101,6 +102,7 @@
     <string name="about_not_4">The other person keeping, screenshotting or forwarding what you send.</string>
     <string name="about_not_5">Denial of service, and relay availability.</string>
     <string name="about_not_6">A weak lock screen on the phone.</string>
+    <string name="about_not_7">Message length: a longer message needs more encrypted pieces, so a relay can see roughly how long each message is.</string>
 
     <string name="keys_reset_title">Keys were reset</string>
     <string name="keys_reset_body">Your screen lock or biometrics changed, so the keys on this phone are gone by design. Pair again to continue.</string>

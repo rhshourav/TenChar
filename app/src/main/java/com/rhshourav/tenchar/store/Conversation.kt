@@ -1,11 +1,14 @@
 package com.rhshourav.tenchar.store
 
 import com.rhshourav.tenchar.crypto.Ratchet
+import com.rhshourav.tenchar.crypto.Reassembler
 
 class StoredMessage(val id: Long, val text: String, val mine: Boolean, var delivery: Int)
 
 /** An envelope that is already encrypted (the ratchet has moved on) but not yet accepted by a relay. */
 class OutboxItem(val msgId: Long, val envelope: ByteArray)
+
+// A message longer than one frame is several outbox items with the same msgId; it counts as sent when the last one is.
 
 /**
  * Everything the app remembers about the one conversation it can hold.
@@ -28,10 +31,13 @@ class Conversation(
     val outbox: MutableList<OutboxItem> = ArrayList(),
     val messages: MutableList<StoredMessage> = ArrayList(),
     var nextMsgId: Long = 1L,
+    /** Pieces of long messages that have arrived but are not yet complete. Saved with the conversation. */
+    val reassembler: Reassembler = Reassembler(),
 ) {
     /** Overwrites key material. Strings (the member token) cannot be overwritten on the JVM. */
     fun wipe() {
         ratchet.wipe()
+        reassembler.wipe()
         for (item in outbox) item.envelope.fill(0)
     }
 

@@ -170,17 +170,20 @@ class StateCodecTest {
         }
         // A count that promises more than the file holds.
         try { read(byteArrayOf(0, 5, 'a'.code.toByte())); assertTrue("accepted a short string", false) } catch (e: java.io.EOFException) {}
-        // A message that is too long never reaches the file.
+        // A message over the 2,048-byte limit never reaches the file, and one at the limit does.
         val (conv, _) = sample()
-        conv.messages.add(StoredMessage(9, "a".repeat(65), true, Conversation.DELIVERY_SENT))
-        try { StateCodec.encode(conv); assertTrue("encoded 65 bytes", false) } catch (e: IOException) {}
+        conv.messages.add(StoredMessage(9, "a".repeat(2049), true, Conversation.DELIVERY_SENT))
+        try { StateCodec.encode(conv); assertTrue("encoded 2049 bytes", false) } catch (e: IOException) {}
+        conv.messages.removeAt(conv.messages.lastIndex)
+        conv.messages.add(StoredMessage(9, "a".repeat(2048), true, Conversation.DELIVERY_SENT))
+        assertEquals("a".repeat(2048), StateCodec.decode(StateCodec.encode(conv), rnd)!!.messages.last().text)
     }
 
     @Test
-    fun onlyVersionTwoIsAccepted() {
+    fun onlyVersionThreeIsAccepted() {
         val bytes = StateCodec.encode(sample().first)
-        assertEquals(2, bytes[4].toInt()) // magic (4 bytes), then the version
-        for (version in listOf(0, 1, 3, 255)) {
+        assertEquals(3, bytes[4].toInt()) // magic (4 bytes), then the version
+        for (version in listOf(0, 1, 2, 4, 255)) {
             try {
                 StateCodec.decode(bytes.copyOf().also { it[4] = version.toByte() }, rnd)
                 assertTrue("accepted version $version", false)

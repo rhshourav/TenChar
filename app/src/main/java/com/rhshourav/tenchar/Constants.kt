@@ -2,14 +2,40 @@ package com.rhshourav.tenchar
 
 /** The only place protocol and policy numbers are defined. */
 object Constants {
-    /** Maximum message length in user-perceived characters (grapheme clusters). */
-    const val MAX_CHARS = 10
+    /** Maximum length of one message in user-perceived characters (grapheme clusters). Longer text is split. */
+    const val MAX_CHARS = 500
 
-    /** Maximum message length in UTF-8 bytes. */
+    /**
+     * Maximum length of one message in UTF-8 bytes. 500 characters of 4-byte emoji are 2,000 bytes, so this
+     * leaves room for them; it also bounds a single character with many combining marks.
+     */
+    const val MAX_MESSAGE_BYTES = 2048
+
+    /** The most text a person can have in the composer at once: it is split into up to ten messages on send. */
+    const val MAX_DRAFT_CHARS = 5000
+    const val MAX_DRAFT_BYTES = 20_000
+
+    /**
+     * Payload bytes in one frame. The name is kept because the relay's contract test reads it: a frame is
+     * [type 1][len 1][payload MAX_UTF8_BYTES], zero padded, and one frame is one fixed-size envelope.
+     */
     const val MAX_UTF8_BYTES = 64
 
     /** Fixed frame size: [type 1][len 1][payload MAX_UTF8_BYTES], zero padded. */
     const val FRAME_BYTES = 2 + MAX_UTF8_BYTES
+
+    /**
+     * A message of up to MAX_UTF8_BYTES bytes is one text frame (type 1). A longer one is sent as fragments
+     * (type 2): the payload starts with [group 2][index 1][count 1], leaving this many bytes of text per frame.
+     */
+    const val FRAGMENT_HEADER_BYTES = 4
+    const val MAX_FRAGMENT_DATA = MAX_UTF8_BYTES - FRAGMENT_HEADER_BYTES
+
+    /** ceil(MAX_MESSAGE_BYTES / MAX_FRAGMENT_DATA): the most frames one message can need. */
+    const val MAX_FRAGMENTS = (MAX_MESSAGE_BYTES + MAX_FRAGMENT_DATA - 1) / MAX_FRAGMENT_DATA
+
+    /** Partly received messages kept per conversation. The oldest is dropped beyond this. */
+    const val MAX_PENDING_MESSAGES = 16
 
     /** Envelope: [version 1][ratchet pub 32][prevChainLen 4][n 4] + nonce 12 + frame 66 + tag 16 = 135. */
     const val HEADER_BYTES = 41
