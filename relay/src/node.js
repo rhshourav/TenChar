@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { MAX_BODY_BYTES } from "./constants.js";
 import { Mutex, RoomCore, isRoomId, parseRoute } from "./core.js";
+import { parsePushHosts, sendPush } from "./push.js";
 
 const BASE_HEADERS = { "cache-control": "no-store", "x-content-type-options": "nosniff" };
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
@@ -96,12 +97,18 @@ function readBody(req, max) {
   });
 }
 
-export function createRelay({ dataDir = null, maxRooms = 10000, now = () => Date.now() } = {}) {
+export function createRelay({
+  dataDir = null,
+  maxRooms = 10000,
+  now = () => Date.now(),
+  pushHosts = parsePushHosts(process.env.PUSH_HOSTS),
+  notify = (url) => void sendPush(url),
+} = {}) {
   const rooms = new Map(); // room id -> {storage, core, pending, persisted, persistMutex}
 
   function newEntry() {
     const storage = new MemoryStorage();
-    return { storage, core: new RoomCore(storage, { now }), pending: 0, persisted: 0, persistMutex: new Mutex() };
+    return { storage, core: new RoomCore(storage, { now, pushHosts, notify }), pending: 0, persisted: 0, persistMutex: new Mutex() };
   }
 
   async function persist(id, entry) {
