@@ -16,6 +16,12 @@ class RelayAddressTest {
     }
 
     @Test
+    fun fallbackRelayIsCanonicalAndAcceptsATrailingSlash() {
+        assertEquals(Constants.FALLBACK_RELAY_URL, RelayAddress.normalise(Constants.FALLBACK_RELAY_URL))
+        assertEquals(Constants.FALLBACK_RELAY_URL, RelayAddress.normalise("https://tenchar-relay.tenchar.workers.dev/"))
+    }
+
+    @Test
     fun cleansUpWhatPeopleTypeOrPaste() {
         assertEquals(onrender, RelayAddress.normalise("$onrender/"))
         assertEquals(onrender, RelayAddress.normalise("  HTTPS://TenChar-Relay.OnRender.com/  "))

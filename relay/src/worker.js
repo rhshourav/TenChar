@@ -4,6 +4,7 @@
 import { MAX_BODY_BYTES } from "./constants.js";
 import { RoomCore, parseRoute } from "./core.js";
 import { jsonResponse, readBodyCapped } from "./http.js";
+import { parsePushHosts, sendPush } from "./push.js";
 
 /** Adapts Durable Object storage to the interface RoomCore expects. */
 export class DoStorage {
@@ -35,9 +36,16 @@ export class Room {
   #ctx;
   #core;
 
-  constructor(ctx) {
+  constructor(ctx, env) {
     this.#ctx = ctx;
-    this.#core = new RoomCore(new DoStorage(ctx.storage));
+    this.#core = new RoomCore(new DoStorage(ctx.storage), {
+      pushHosts: parsePushHosts(env?.PUSH_HOSTS),
+      // waitUntil keeps the Durable Object alive until the notice has gone out, without delaying the response.
+      notify: (url) => {
+        const sending = sendPush(url);
+        if (typeof ctx.waitUntil === "function") ctx.waitUntil(sending);
+      },
+    });
   }
 
   async fetch(request) {

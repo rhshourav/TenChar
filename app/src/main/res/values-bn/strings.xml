@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="preview_banner">প্রিভিউ: এখানে কিছুই এনক্রিপ্ট বা পাঠানো হয় না।</string>
     <string name="back">পিছনে</string>
     <string name="cancel">বাতিল</string>
     <string name="dialog_close">বন্ধ করুন</string>
@@ -28,18 +27,16 @@
     <string name="waiting_body">২৪ ঘণ্টার মধ্যে এই কোডটি অন্য ফোনে লিখুন। শুধু সেই ব্যক্তির সাথে শেয়ার করুন, সরাসরি অথবা আপনার বিশ্বস্ত মাধ্যমে।</string>
     <string name="waiting_copy">কোড কপি করুন</string>
     <string name="waiting_copied">কপি হয়েছে</string>
-    <string name="waiting_simulate">প্রিভিউ: ধরুন অন্য ফোন যোগ দিয়েছে</string>
 
     <string name="verify_title">সংখ্যাটি মিলিয়ে নিন</string>
     <string name="verify_body">দুই ফোনেই একই সংখ্যা দেখাতে হবে। সংখ্যাটি সরাসরি বা ফোনে কথা বলে মিলিয়ে নিন, এই অ্যাপের বার্তায় নয়। এই যাচাইটিই দূষিত রিলে থেকে আপনাকে রক্ষা করে।</string>
-    <string name="verify_sample_note">প্রিভিউ: এটি একটি নমুনা সংখ্যা।</string>
     <string name="verify_match">মিলেছে</string>
     <string name="verify_mismatch">মেলেনি</string>
 
     <string name="chat_title">কথোপকথন</string>
     <string name="chat_settings">সেটিংস</string>
-    <string name="chat_empty">এখনো কোনো বার্তা নেই। ১০ অক্ষর বা তার কমে কিছু লিখুন।</string>
-    <string name="chat_input_hint">সর্বোচ্চ ১০ অক্ষর</string>
+    <string name="chat_empty">এখনো কোনো বার্তা নেই। কিছু লিখে শুরু করুন।</string>
+    <string name="chat_input_hint">বার্তা লিখুন</string>
     <string name="chat_send">পাঠান</string>
     <string name="delivery_queued">অপেক্ষমাণ</string>
     <string name="delivery_sent">পাঠানো হয়েছে</string>
@@ -60,15 +57,14 @@
     <string name="relay_reset">ডিফল্ট রিলে ব্যবহার করুন</string>
     <string name="settings_about">পরিচিতি ও সীমাবদ্ধতা</string>
     <string name="settings_forget">কথোপকথন মুছুন</string>
-    <string name="settings_preview_keys_reset">প্রিভিউ: কী রিসেট হয়েছে স্ক্রিনটি দেখুন</string>
     <string name="forget_confirm_title">এই কথোপকথন মুছবেন?</string>
     <string name="forget_confirm_body">এই ফোনের বার্তা ও কী মুছে যাবে। আবার যুক্ত করতে হবে। এটি ফেরানো যাবে না।</string>
     <string name="forget_confirm_yes">মুছুন</string>
 
     <string name="about_title">TenChar সম্পর্কে</string>
-    <string name="about_intro">দুজনের জন্য একটি ব্যক্তিগত মেসেঞ্জার। প্রতিটি বার্তা সর্বোচ্চ ১০ অক্ষরের।</string>
-    <string name="about_status">এটি একটি প্রিভিউ বিল্ড। স্ক্রিনগুলো কাজ করে, কিন্তু এনক্রিপশন, স্টোরেজ ও রিলে এখনো তৈরি হয়নি, তাই কিছুই সুরক্ষিত বা পাঠানো হচ্ছে না।</string>
-    <string name="about_review">ডাবল র‍্যাচেট স্ট্যান্ডার্ড প্রিমিটিভ থেকে হাতে তৈরি করা হবে। এটি স্বাধীনভাবে পর্যালোচিত হয়নি।</string>
+    <string name="about_intro">একটি ব্যক্তিগত এন্ড-টু-এন্ড এনক্রিপ্টেড মেসেঞ্জার। প্রতিটি চ্যাট দুজনের মধ্যে, আর একটি বার্তায় সর্বোচ্চ ৫০০ অক্ষর যায়; এর চেয়ে লম্বা লেখা কয়েকটি বার্তায় ভাগ হয়ে যায়।</string>
+    <string name="about_status">প্রতিটি বার্তা আপনার ফোনেই ডাবল র‍্যাচেট দিয়ে এনক্রিপ্ট হয়, আর রিলে শুধু সাইফারটেক্সট রাখে। কোনো পুশ নোটিফিকেশন নেই: অ্যাপ খোলা থাকলেই বার্তা আসে।</string>
+    <string name="about_review">ক্রিপ্টোগ্রাফি স্ট্যান্ডার্ড প্রিমিটিভ (X25519, HKDF, AES-GCM) থেকে হাতে তৈরি। এটি ওপেন সোর্স, কিন্তু স্বাধীনভাবে পর্যালোচিত হয়নি। যেখানে ভুলে কারও বিপদ হতে পারে, সেখানে এর উপর নির্ভর করবেন না।</string>
     <string name="about_not_title">TenChar যা থেকে রক্ষা করবে না</string>
     <string name="about_not_1">আনলক করা ফোনে ম্যালওয়্যার বা আপসকৃত অপারেটিং সিস্টেম, স্ক্রিন রিডার এবং অনুমতিপ্রাপ্ত অ্যাক্সেসিবিলিটি সার্ভিস।</string>
     <string name="about_not_2">আপনি যা টাইপ করেন তা রেকর্ড করে এমন থার্ড-পার্টি কিবোর্ড।</string>
@@ -76,8 +72,79 @@
     <string name="about_not_4">অন্য ব্যক্তি আপনার পাঠানো বার্তা রেখে দেওয়া, স্ক্রিনশট নেওয়া বা ফরোয়ার্ড করা।</string>
     <string name="about_not_5">সার্ভিস অস্বীকার (DoS) আক্রমণ এবং রিলের উপলব্ধতা।</string>
     <string name="about_not_6">ফোনের দুর্বল লক স্ক্রিন।</string>
+    <string name="about_not_7">বার্তার দৈর্ঘ্য: লম্বা বার্তায় বেশি এনক্রিপ্টেড অংশ লাগে, তাই রিলে প্রতিটি বার্তা মোটামুটি কত লম্বা তা আন্দাজ করতে পারে।</string>
 
     <string name="keys_reset_title">কী রিসেট হয়েছে</string>
-    <string name="keys_reset_body">আপনার স্ক্রিন লক বা বায়োমেট্রিক পরিবর্তন হয়েছে, তাই এই ফোনের কী নকশা অনুযায়ীই মুছে গেছে। চালিয়ে যেতে আবার যুক্ত করুন।</string>
-    <string name="keys_reset_pair">আবার যুক্ত করুন</string>
+    <string name="keys_reset_body">TenChar আপনার সংরক্ষিত চ্যাট খুলতে পারেনি।</string>
+    <string name="auth_title">TenChar আনলক করুন</string>
+    <string name="auth_body">আপনার কথোপকথন খুলতে নিশ্চিত করুন যে এটি আপনি।</string>
+    <string name="gate_failed">আনলক করা যায়নি। আবার চেষ্টা করুন।</string>
+
+    <string name="setup_title">TenChar সেট আপ করুন</string>
+    <string name="setup_body">শুরুর আগে দুটি ছোট পছন্দ। দুটিই পরে সেটিংসে বদলানো যাবে।</string>
+    <string name="setup_relays">রিলে</string>
+    <string name="setup_relays_note">রিলে আপনার দুই ফোনের মধ্যে এনক্রিপ্টেড বার্তা পৌঁছে দেয়। ব্যাকআপ রিলে থাকলে মূল রিলে বন্ধ থাকলেও বার্তা চলে, তবে দ্বিতীয় রিলেও আপনার আইপি ঠিকানা ও সময় দেখতে পায়।</string>
+    <string name="setup_continue">চালিয়ে যান</string>
+    <string name="fallback_label">ব্যাকআপ রিলে</string>
+    <string name="fallback_detail">মূল রিলে বন্ধ থাকলে ব্যবহার হয়</string>
+    <string name="fallback_address">ব্যাকআপ রিলে ঠিকানা</string>
+    <string name="relay_change_note">এই পরিবর্তন এখন থেকে যুক্ত করা চ্যাটে প্রযোজ্য হবে। প্রতিটি চ্যাট যে রিলেতে যুক্ত হয়েছিল সেগুলোই ব্যবহার করে।</string>
+
+    <string name="joining_title">সংযোগ হচ্ছে</string>
+    <string name="joining_body">কোড যাচাই করে অন্য ফোন খোঁজা হচ্ছে। রিলে ঘুম থেকে জাগতে প্রথম সংযোগে এক মিনিট পর্যন্ত লাগতে পারে।</string>
+    <string name="notice_timeout">ওই কোডে কোনো ফোন সাড়া দেয়নি। কোডটি এবং দুই ফোনে একই রিলে আছে কি না দেখে আবার চেষ্টা করুন।</string>
+    <string name="notice_unreachable">কোনো রিলেতে পৌঁছানো যায়নি। সংযোগ দেখে আবার চেষ্টা করুন।</string>
+    <string name="notice_tampered">রিলেগুলো ভিন্ন উত্তর দিয়েছে, অথবা অপর পক্ষের কী তার প্রতিশ্রুতির সাথে মেলেনি। নিরাপত্তার জন্য যুক্তকরণ বাতিল হয়েছে।</string>
+    <string name="notice_full">ওই কোডটি ইতিমধ্যে দুটি ফোন ব্যবহার করেছে। নতুন কোড তৈরি করুন।</string>
+    <string name="notice_storage">এই ফোনে কী সংরক্ষণ করা যায়নি। আবার চেষ্টা করুন।</string>
+
+    <string name="chat_limit_bytes">বার্তার বক্স ভরে গেছে। এটি পাঠিয়ে আবার লিখুন।</string>
+    <string name="chat_split_hint">একটি বার্তার জন্য বেশি লম্বা। এটি %1$dটি বার্তায় ভাগ করে পাঠানো হবে।</string>
+    <string name="chat_offline">অফলাইন। রিলেতে পৌঁছানো গেলে বার্তা পাঠানো হবে।</string>
+    <string name="chat_gone">রিলেতে আর এই কথোপকথন নেই। আপনাকে হয়তো আবার যুক্ত করতে হবে।</string>
+    <string name="chats_title">চ্যাট</string>
+    <string name="chats_new">নতুন চ্যাট</string>
+    <string name="chat_unnamed">চ্যাট %1$d</string>
+    <string name="chat_unverified">এখনো যাচাই হয়নি</string>
+    <string name="chat_settings_title">চ্যাট সেটিংস</string>
+    <string name="profile_you">আপনি</string>
+    <string name="profile_them">অপর পক্ষ</string>
+    <string name="profile_none">এখনো নাম নেই</string>
+    <string name="profile_title_you">আপনার নাম ও অ্যাভাটার</string>
+    <string name="profile_title_them">আপনি তাদের কীভাবে দেখবেন</string>
+    <string name="profile_name_hint">নাম</string>
+    <string name="profile_avatar">অ্যাভাটার</string>
+    <string name="profile_avatar_hint">অথবা নিজের ইমোজি লিখুন</string>
+    <string name="profile_use_initial">প্রথম অক্ষর ব্যবহার করুন</string>
+    <string name="profile_colour">রং</string>
+    <string name="profile_reset_them">তাদের দেওয়া নামই ব্যবহার করুন</string>
+    <string name="profile_share_note">আপনার নাম ও অ্যাভাটার এন্ড-টু-এন্ড এনক্রিপ্টেড অবস্থায় তাদের কাছে যায়। আপনি তাদের কীভাবে দেখেন তা শুধু এই ফোনেই থাকে।</string>
+    <string name="settings_default_profile">আমার নাম ও অ্যাভাটার</string>
+    <string name="notifications_label">নোটিফিকেশন</string>
+    <string name="notifications_detail">প্রেরক বা লেখা ছাড়া শুধু একটি ছোট “নতুন বার্তা” সতর্কবার্তা</string>
+    <string name="notifications_help_title">সতর্কবার্তা চালু করুন</string>
+    <string name="notifications_help_body">সতর্কবার্তা আসে ntfy অ্যাপ থেকে, গুগল থেকে নয়। ntfy ইনস্টল করে এই ঠিকানায় সাবস্ক্রাইব করুন। ঠিকানাটি গোপন: এটি শুধু এই চ্যাটের।</string>
+    <string name="notifications_copy">ঠিকানা কপি করুন</string>
+    <string name="notifications_open">ntfy-তে খুলুন</string>
+    <string name="notifications_done">হয়েছে</string>
+    <string name="notifications_privacy">পুশ সার্ভিস শুধু জানে যে একটি বার্তা এসেছে এবং কখন; কে পাঠিয়েছে বা কী লেখা ছিল তা কখনো জানে না।</string>
+    <string name="notifications_unsupported">এই রিলে এখনো নোটিফিকেশন সমর্থন করে না। রিলে আপডেট করে আবার চেষ্টা করুন।</string>
+    <string name="notifications_rejected">এই রিলে ওই পুশ সার্ভিস অনুমোদন করে না। রিলে যিনি চালান তাঁকে যোগ করতে বলুন, অথবা সেটিংসে পুশ সার্ভার বদলান।</string>
+    <string name="settings_push_server">পুশ সার্ভার</string>
+    <string name="push_server_title">পুশ সার্ভারের ঠিকানা</string>
+    <string name="push_server_body">এখন থেকে আপনি যে নোটিফিকেশন চালু করবেন তা এই সার্ভিসের মাধ্যমে যাবে। এটি জানে যে একটি বার্তা এসেছে এবং কখন। আপনার রিলেগুলোকে এটি অনুমোদন করতে হবে।</string>
+    <string name="chat_relays">এই চ্যাটের রিলে</string>
+    <string name="relay_for_chat">এই চ্যাটের রিলে</string>
+    <string name="notice_too_many">আপনি ২০টি চ্যাটের সীমায় পৌঁছেছেন। আরেকটি যোগ করতে একটি মুছে ফেলুন।</string>
+    <string name="lost_key_invalidated">অ্যান্ড্রয়েড আপনার চ্যাট সুরক্ষার কী মুছে দিয়েছে। স্ক্রিন লক সরালে বা রিসেট করলে সাধারণত এমন হয়।</string>
+    <string name="lost_key_missing">আপনার চ্যাট সুরক্ষার কী আর এই ফোনে নেই।</string>
+    <string name="lost_vault_damaged">আপনার চ্যাট কী-এর ফাইলটি নষ্ট হয়ে গেছে।</string>
+    <string name="lost_state_unreadable">আপনার চ্যাট এখানে সংরক্ষিত আছে, কিন্তু কোনো সংরক্ষিত কপিই পড়া যায়নি।</string>
+    <string name="keys_reset_kept">কিছুই মুছে ফেলা হয়নি। আবার চেষ্টা করুন, অথবা সব মুছে নতুন করে যুক্ত করুন।</string>
+    <string name="keys_reset_retry">আবার চেষ্টা করুন</string>
+    <string name="keys_reset_erase">সব মুছে নতুন করে শুরু করুন</string>
+    <string name="erase_confirm_title">সব মুছে ফেলবেন?</string>
+    <string name="erase_confirm_body">এই ফোনের সব চ্যাট মুছে যাবে। অন্যদের কাছে তাদের কপি থাকবে। এটি ফেরানো যাবে না।</string>
+    <string name="erase_confirm_yes">মুছুন</string>
+    <string name="about_not_8">নোটিফিকেশন: আপনার বেছে নেওয়া পুশ সার্ভিস ও তার হোস্ট জানতে পারে যে একটি বার্তা এসেছে এবং কখন; কী লেখা ছিল তা কখনো নয়।</string>
 </resources>

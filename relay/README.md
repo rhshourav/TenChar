@@ -13,7 +13,7 @@ There are no npm dependencies. Run the tests with `npm test` (Node 22 or newer).
 
 ## What was tested, and what was not
 
-Tested here (`npm test`, 37 tests): the protocol logic, including values checked
+Tested here (`npm test`, 50 tests): the protocol logic, including values checked
 against independent Python computations; the Node server over real HTTP,
 including restart persistence; and the Worker plus Durable Object code against a
 **fake** Durable Object store that enforces the 128-key delete limit.
@@ -63,6 +63,7 @@ Environment variables:
 | `PORT` | `8787` | Render sets this itself |
 | `DATA_DIR` | unset | if set, rooms are saved there as `<room>.json` (mode 0600) and reloaded at start |
 | `MAX_ROOMS` | `10000` | new rooms are refused (`503`) beyond this |
+| `PUSH_HOSTS` | `ntfy.sh` | hosts that notifications may be sent to; `none` turns push off |
 
 Persistence rewrites a room's whole file after each change. That is fine for a
 two-person messenger and would not scale to many rooms.
@@ -81,10 +82,28 @@ head -c 600 /dev/zero | tr '\0' x | curl -i -X POST --data-binary @- \
 Then pair two test members using the sequence in `test/node.test.js`
 ("handshake and a message over real HTTP") as a script.
 
+## Push notifications (optional)
+
+A member can register an address that gets a short wake-up when a message is queued for them
+(`POST /v1/rooms/<room>/push` with `{"url": "https://ntfy.sh/<topic>"}`; an empty `url` removes it). The relay sends
+that address the fixed text "New message", never the sender, the room or the content, at most once per 10 seconds.
+
+Because this makes the relay send requests to an address a client chose, it is locked down:
+
+* only hosts on the allow-list: the `PUSH_HOSTS` environment variable (comma separated; default `ntfy.sh`;
+  `none` turns push off, and a relay with push off answers `501 push_unavailable`);
+* https only, one path segment of 16 to 64 letters, digits, `_` or `-` (a long random topic), and no credentials,
+  port, query or fragment; no redirects are followed; the request gives up after 5 seconds;
+* the registered address is never returned by any call, including `state`.
+
+On Cloudflare set it with `wrangler secret put PUSH_HOSTS` or a `[vars]` entry in `wrangler.toml`; on Render add the
+variable in the dashboard. A relay deployed before this change answers `404` to `/push`, and the app says so.
+Redeploy both relays to enable notifications.
+
 ## Privacy
 
-The relay stores token hashes, public keys, commits, ciphertext envelopes and
-timestamps (see the API document). It never logs requests, addresses, room ids
+The relay stores token hashes, public keys, commits, ciphertext envelopes,
+timestamps and, if a member turned notifications on, their push address (see the API document). It never logs requests, addresses, room ids
 or tokens. The only log lines are the listening port at startup and a warning
 when `DATA_DIR` is unset. The host still sees IP
 addresses and timing, and Cloudflare or Render keep their own logs that this

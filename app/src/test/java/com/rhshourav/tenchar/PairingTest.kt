@@ -14,6 +14,7 @@ class PairingTest {
     // independently of this code.
     private val expectedRoom = "f1b914add3fb600eb619488f2d3e622c"
     private val expectedToken = "5d3b0d40eb1b4274dde289ad6d7f6f84f6c4c64d23f2ddcf"
+    private val expectedKey = "e35b8e3b2f8d6601f12b26e95cd2eed063ed1be586555ffe1dcf739f124425ac"
 
     @Test
     fun pbkdf2MatchesPublishedVectors() {
@@ -38,6 +39,7 @@ class PairingTest {
         val d = Pairing.derive("ABCD-EFGH-JKLM-NPQR")
         assertEquals(expectedRoom, d.room)
         assertEquals(expectedToken, d.codeToken)
+        assertEquals(expectedKey, Hex.encode(d.codeKey))
     }
 
     @Test
@@ -45,6 +47,7 @@ class PairingTest {
         val d = Pairing.derive(" abcd-efgh jklm-npqr ")
         assertEquals(expectedRoom, d.room)
         assertEquals(expectedToken, d.codeToken)
+        assertEquals(expectedKey, Hex.encode(d.codeKey))
     }
 
     @Test
@@ -55,6 +58,12 @@ class PairingTest {
         assertTrue(d.room.all { it in "0123456789abcdef" })
         assertTrue(d.codeToken.all { it in "0123456789abcdef" })
         assertFalse(d.codeToken.startsWith(d.room))
+        // The key that never leaves the phone is independent of what the relay sees.
+        assertEquals(32, d.codeKey.size)
+        assertFalse(Hex.encode(d.codeKey).contains(d.codeToken))
+        assertFalse(Hex.encode(d.codeKey).startsWith(d.room))
+        d.wipe()
+        assertTrue(d.codeKey.all { it.toInt() == 0 })
     }
 
     @Test
@@ -62,6 +71,7 @@ class PairingTest {
         val d = Pairing.derive(code)
         assertFalse(d.toString().contains(d.room))
         assertFalse(d.toString().contains(d.codeToken))
+        assertFalse(d.toString().contains(Hex.encode(d.codeKey)))
     }
 
     @Test

@@ -19,11 +19,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.TextFieldDefaults
@@ -51,6 +55,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.HorizontalDivider
 import com.rhshourav.tenchar.R
 
@@ -68,6 +73,8 @@ fun TenCharScreen(
     scroll: Boolean = true,
     contentArrangement: Arrangement.Vertical = Arrangement.Top,
     contentAlignment: Alignment.Horizontal = Alignment.Start,
+    /** Shown between the back button and the title, for example the other person's avatar. */
+    leading: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
     bottomBar: (@Composable ColumnScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
@@ -76,7 +83,6 @@ fun TenCharScreen(
         modifier = Modifier.fillMaxSize().safeDrawingPadding(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        PreviewChip()
         if (title != null) {
             Row(
                 modifier = Modifier
@@ -89,9 +95,15 @@ fun TenCharScreen(
                     GlassIconButton(TcIcon.ChevronLeft, stringResource(R.string.back), onBack)
                     Spacer(Modifier.width(12.dp))
                 }
+                if (leading != null) {
+                    leading()
+                    Spacer(Modifier.width(12.dp))
+                }
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).semantics { heading() },
                 )
                 actions()
@@ -122,30 +134,6 @@ fun TenCharScreen(
     }
 }
 
-/** Says on every screen that this build protects nothing. Must stay until the crypto is real. */
-@Composable
-private fun PreviewChip() {
-    Row(
-        modifier = Modifier
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .widthIn(max = ContentMaxWidth)
-            .glass(RoundedCornerShape(16.dp))
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        GlowDot(Tc.Peach, 7.dp)
-        Spacer(Modifier.width(10.dp))
-        Text(
-            text = stringResource(R.string.preview_banner),
-            style = MaterialTheme.typography.labelMedium,
-            color = Tc.InkMuted,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-    }
-}
-
 enum class ButtonKind { Primary, Glass, Caution }
 
 @Composable
@@ -162,12 +150,14 @@ fun TcButton(
             .glowShadow(shape)
             .background(Tc.Brand, shape)
         ButtonKind.Glass -> Modifier.glass(shape)
-        ButtonKind.Caution -> Modifier.glass(shape, tintOf(Tc.Peach, 0.14f))
+        ButtonKind.Caution -> Modifier.glass(shape, tintOf(Tc.Peach, Palette.TINT_CAUTION))
     }
     val textColor = when (kind) {
         ButtonKind.Primary -> Tc.Space
         ButtonKind.Glass -> Tc.Ink
-        ButtonKind.Caution -> Tc.Peach
+        // Peach text on a peach-tinted plate is only about 3 : 1, so the plate's tint and edge carry the
+        // caution and the text stays ink (4.7 : 1 or better).
+        ButtonKind.Caution -> Tc.Ink
     }
     Box(
         modifier = modifier
@@ -321,7 +311,7 @@ fun GlassRow(text: String, onClick: () -> Unit, caution: Boolean = false, detail
             Text(
                 text = text,
                 style = MaterialTheme.typography.bodyLarge,
-                color = if (caution) Tc.Peach else Tc.Ink,
+                color = if (caution) Tc.PeachText else Tc.Ink,
             )
             if (detail != null) {
                 Text(
@@ -334,6 +324,90 @@ fun GlassRow(text: String, onClick: () -> Unit, caution: Boolean = false, detail
             }
         }
         TcIconView(TcIcon.ChevronRight, if (caution) Tc.Peach else Tc.InkFaint, Modifier.size(20.dp))
+    }
+}
+
+/**
+ * A round avatar: an emoji (or, if there is none, the first letter of the name) on a soft gradient. The colour
+ * number picks the gradient from [Palette.AVATARS]; the letter is dark because every gradient is light.
+ * Decorative: the name is always next to it, so screen readers skip it.
+ */
+@Composable
+fun Avatar(avatar: String, name: String, color: Int, size: Dp, modifier: Modifier = Modifier) {
+    val (from, to) = Palette.AVATARS[color.coerceIn(0, Palette.AVATARS.size - 1)]
+    val label = avatar.ifEmpty { com.rhshourav.tenchar.MessageLimits.firstGrapheme(name).uppercase().ifEmpty { "?" } }
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(Brush.linearGradient(listOf(Color(from), Color(to))))
+            .clearAndSetSemantics { },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = TextStyle(
+                fontSize = (size.value * 0.46f).sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Tc.Space,
+            ),
+            maxLines = 1,
+        )
+    }
+}
+
+/** A line inside a [GlassCard] that only shows information (no chevron, not tappable). */
+@Composable
+fun GlassInfoRow(text: String, detail: String) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(text = text, style = MaterialTheme.typography.bodyLarge, color = Tc.Ink)
+        Text(text = detail, style = MaterialTheme.typography.labelMedium, color = Tc.InkMuted)
+    }
+}
+
+/** One toggle line inside a [GlassCard]. The whole row is the touch target. */
+@Composable
+fun GlassSwitchRow(text: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, detail: String? = null) {
+    val tick = rememberTick()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .toggleable(value = checked, role = Role.Switch) {
+                tick()
+                onCheckedChange(it)
+            }
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(text = text, style = MaterialTheme.typography.bodyLarge, color = Tc.Ink)
+            if (detail != null) {
+                Text(
+                    text = detail,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Tc.InkMuted,
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = null,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Tc.Space,
+                checkedTrackColor = Tc.Mint,
+                uncheckedThumbColor = Tc.InkMuted,
+                uncheckedTrackColor = Color.White.copy(alpha = 0.12f),
+                uncheckedBorderColor = Color.White.copy(alpha = 0.35f),
+            ),
+        )
     }
 }
 
@@ -384,8 +458,9 @@ fun tcFieldColors(): TextFieldColors = TextFieldDefaults.colors(
     unfocusedIndicatorColor = Color.Transparent,
     disabledIndicatorColor = Color.Transparent,
     errorIndicatorColor = Color.Transparent,
-    focusedPlaceholderColor = Tc.InkFaint,
-    unfocusedPlaceholderColor = Tc.InkFaint,
+    // Placeholders sit on a plate, where faint is too dim to read; muted clears 4.5 : 1.
+    focusedPlaceholderColor = Tc.InkMuted,
+    unfocusedPlaceholderColor = Tc.InkMuted,
 )
 
 val EntryStyle: TextStyle = CodeStyle.copy(fontSize = 20.sp, letterSpacing = 1.sp, lineHeight = 28.sp)

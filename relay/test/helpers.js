@@ -26,10 +26,10 @@ export const revealBody = (m) => ({ memberId: m.memberId, ik: m.ik, ek: m.ek });
 /** A valid 180-character envelope. */
 export const envelope = (fill = "A") => fill.repeat(180);
 
-export function makeHarness() {
+export function makeHarness(options = {}) {
   const clock = { t: 1_800_000_000_000 };
   const storage = new MemoryStorage();
-  const core = new RoomCore(storage, { now: () => clock.t });
+  const core = new RoomCore(storage, { now: () => clock.t, ...options });
   const call = (action, { auth, body, query } = {}) =>
     core.handle({
       action,

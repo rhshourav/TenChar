@@ -7,12 +7,15 @@
 // Cloudflare Durable Object storage and the in-memory store used by the Node
 // server both fit. Nothing here logs.
 
+import { DEFAULT_PUSH_HOSTS } from "./constants.js";
+import { parsePushUrl } from "./push.js";
 import {
   COMMIT_PREFIX,
   ENVELOPE_B64_CHARS,
   MAX_QUEUE,
   PAGE_SIZE,
   PAIRING_WINDOW_MS,
+  PUSH_MIN_INTERVAL_MS,
   RETENTION_MS,
   TOUCH_INTERVAL_MS,
 } from "./constants.js";
@@ -89,7 +92,7 @@ const seqOfKey = (key) => Number(key.slice(key.lastIndexOf(":") + 1));
 
 /**
  * Parses method and path. Returns {room, action} or {status, error}.
- * Actions: hello, state, reveal, post_message, get_messages, ack, delete.
+ * Actions: hello, state, reveal, post_message, get_messages, ack, push, delete.
  */
 export function parseRoute(method, pathname) {
   const m = /^\/v1\/rooms\/([^/]+)(?:\/([a-z]+))?$/.exec(pathname);
@@ -102,6 +105,7 @@ export function parseRoute(method, pathname) {
     "POST messages": "post_message",
     "GET messages": "get_messages",
     "POST ack": "ack",
+    "POST push": "push",
     "DELETE ": "delete",
   };
   const action = table[`${method} ${tail ?? ""}`];
@@ -113,11 +117,19 @@ export function parseRoute(method, pathname) {
 export class RoomCore {
   #storage;
   #now;
+  #notify;
+  #pushHosts;
   #mutex = new Mutex();
 
-  constructor(storage, { now = () => Date.now() } = {}) {
+  /**
+   * notify(url) is called, without waiting for it, when a message is queued for someone who registered a push
+   * address. pushHosts is the allow-list of push services; an empty list turns push off.
+   */
+  constructor(storage, { now = () => Date.now(), notify = null, pushHosts = DEFAULT_PUSH_HOSTS } = {}) {
     this.#storage = storage;
     this.#now = now;
+    this.#notify = notify;
+    this.#pushHosts = pushHosts;
   }
 
   /**
@@ -158,7 +170,7 @@ export class RoomCore {
     const meta = await this.#load(now);
 
     let body = null;
-    if (action === "hello" || action === "reveal" || action === "post_message" || action === "ack") {
+    if (action === "hello" || action === "reveal" || action === "post_message" || action === "ack" || action === "push") {
       try {
         body = JSON.parse(bodyText);
       } catch {
@@ -193,6 +205,8 @@ export class RoomCore {
         return this.#getMessages(meta, auth, query, now);
       case "ack":
         return this.#ack(meta, auth, body);
+      case "push":
+        return this.#push(meta, auth, body);
       default:
         return fail(404, "not_found");
     }
@@ -307,8 +321,35 @@ export class RoomCore {
     meta.nextSeq[peer.id] = seq;
     meta.queueLen[peer.id] = (meta.queueLen[peer.id] ?? 0) + 1;
     await this.#storage.put(queueKey(peer.id, seq), { env: body.env, at: now });
+    // A wake-up for the recipient, at most once in a while however many messages arrive.
+    const wake = this.#notify && peer.push && now - (peer.pushedAt ?? 0) >= PUSH_MIN_INTERVAL_MS;
+    if (wake) peer.pushedAt = now;
     await this.#save(meta);
+    if (wake) {
+      try {
+        Promise.resolve(this.#notify(peer.push)).catch(() => {});
+      } catch {
+        // Delivery never depends on the push service.
+      }
+    }
     return ok(201, { ok: true });
+  }
+
+  /** Registers (or, with an empty url, removes) the address that gets a wake-up when a message arrives for this member. */
+  async #push(meta, auth, body) {
+    if (!this.#notify || this.#pushHosts.length === 0) return fail(501, "push_unavailable");
+    if (typeof body.url !== "string") return fail(400, "bad_request");
+    if (body.url === "") {
+      auth.member.push = null;
+      await this.#save(meta);
+      return ok(200, { push: false });
+    }
+    const url = parsePushUrl(body.url, this.#pushHosts);
+    if (!url) return fail(400, "bad_push_url");
+    auth.member.push = url;
+    auth.member.pushedAt = 0;
+    await this.#save(meta);
+    return ok(200, { push: true });
   }
 
   async #getMessages(meta, auth, query, now) {
