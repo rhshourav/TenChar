@@ -55,6 +55,8 @@ damaged envelopes change nothing; a replay is rejected because its key is gone.
 Frame (encrypted, 66 bytes): `[type 1][len 1][payload 64, zero padded]`.
 
 - Type 1, text: the payload is up to 64 bytes of UTF-8, a whole message.
+- Type 3, profile: the payload is `[color 1][avatar length 1][avatar][name]`: how the sender wants to appear
+  (see Names and avatars). It is not a message and is never shown in the chat.
 - Type 2, fragment: the payload is `[group 2, big endian][index 1][count 1][up to 60 bytes of UTF-8]`.
   The pieces of one longer message share a group; all but the last carry exactly 60 bytes; `count` is 2 to 35.
   The receiver joins them in index order, then checks the whole as strict UTF-8.
@@ -63,6 +65,41 @@ Envelope (135 bytes, 180 base64 chars): `[ver 1][ratchet pub 32][prev chain len 
 `prev chain len` and `n` are big-endian. Every envelope is the same size, and a frame is always one envelope,
 so the relay is unchanged. The relay sees the ratchet public key, counters and timing, and now also how many
 envelopes a message used (see Known limits).
+
+## Several chats
+
+The app holds up to 20 chats. Each is its own pairing with its own room, member token, ratchet and relays (the
+relays chosen when it was paired; changing the relay setting only affects chats paired afterwards). The open chat
+is polled every 3 seconds, the others every 10. A chat shows an unread count until it is opened.
+
+## Names and avatars
+
+Each person has a name (at most 20 characters and 32 bytes) and an avatar (one emoji, at most 28 bytes, or none) and a
+colour number 0 to 7. "You" is sent to the other person in a profile frame when the chat is verified and whenever it
+changes. "Them" is what they sent, and you may override it; your override is local and never sent. What arrives is
+decoded strictly, then cleaned like typed text (control and bidirectional characters removed, one space between words,
+limits applied, avatar cut to its first character). Avatars are emoji, never pictures: decoding images from the other
+phone would be an attack surface, and a profile has to fit in one frame.
+
+## Notifications
+
+There are no Google services. A chat can register a secret address (a 24-byte random topic on a push service, `ntfy.sh`
+by default) with its relays (`POST /v1/rooms/{room}/push`, member token). When a message is queued for that person the
+relay sends the address a fixed "New message" notice, at most once per 10 seconds. The push service learns that a message
+arrived and when. The relay learns the address, and never shows it to the other person. The relay only contacts hosts on
+its allow-list (`PUSH_HOSTS`), over https, with a single-segment topic path and no credentials, query, port or redirects.
+The phone's notification comes from the push app (ntfy), subscribed to the address by the person.
+
+## Nothing is deleted by an error
+
+Saved data is removed only when the person chooses "Forget this chat" or "Erase and start over".
+- A temporary failure while unlocking (a Keystore hiccup, a read error) shows "try again" and changes nothing.
+- If the key is certainly gone (Android invalidated it, it is missing, or the wrapped data key is damaged) the app says why,
+  keeps every file, and offers "Try again" and "Erase and start over".
+- Each save keeps the previous state as `tc_state.bak`, but only if that file itself reads correctly. If the current file
+  cannot be read, the backup is used.
+- Every earlier state version (1 to 3) is read and saved back as version 4. A file from a newer app is refused, not deleted.
+- New Keystore keys are not invalidated when a fingerprint or face is enrolled.
 
 ## Message length
 
@@ -99,6 +136,9 @@ The data key is in memory only while unlocked. Locking overwrites it, the ratche
 the outbox. The JVM cannot overwrite `String`s (the member token) or guarantee that the garbage
 collector left no copy, so memory wiping is best effort.
 
+State versions: 1 (one chat, Java's string format), 2 (standard UTF-8), 3 (long messages), 4 (several chats, profiles, notification
+address, unread counts, a default profile). All are read; the newest is written.
+
 ## Known limits
 
 - Not independently audited. X25519 is a port of TweetNaCl's ladder, checked against RFC 7748
@@ -107,4 +147,6 @@ collector left no copy, so memory wiping is best effort.
   (the number of envelopes it needed). Short messages, one envelope each, still look alike.
 - The ratchet keeps at most 200 skipped message keys. Frames normally arrive in order; one that arrives more than 200
   places early is refused and its message is lost. A full 5,000-character Bangla draft is about 230 frames.
-- One conversation, two people, no push, no history sync, no key backup.
+- Up to 20 chats, each between two people. No history sync, no key backup.
+- A notification reveals to the push service that a message arrived, and when; to its host, nothing else.
+- Avatars are emoji only.

@@ -6,6 +6,7 @@ import com.rhshourav.tenchar.crypto.Ratchet
 import com.rhshourav.tenchar.crypto.Reassembler
 import com.rhshourav.tenchar.crypto.SystemRandom
 import com.rhshourav.tenchar.crypto.Wire
+import com.rhshourav.tenchar.store.AppState
 import com.rhshourav.tenchar.store.Conversation
 import com.rhshourav.tenchar.store.StateCodec
 import org.junit.Assert.assertEquals
@@ -50,6 +51,7 @@ class LongMessageTest {
             when (val d = Wire.decodeFrame(frame)) {
                 is Wire.Decoded.Text -> d.text
                 is Wire.Decoded.Fragment -> reassembler.accept(d)
+                is Wire.Decoded.ProfileUpdate -> null // not a message
                 null -> null
             }
         }
@@ -141,10 +143,10 @@ class LongMessageTest {
         // The receiver gets some pieces, then the app is locked: the whole conversation is saved.
         val conv = p.conversationB
         assertEquals(emptyList<String>(), receive(conv.ratchet, conv.reassembler, envelopes.take(half)))
-        val saved = StateCodec.encode(conv)
+        val saved = StateCodec.encode(AppState(mutableListOf(conv)))
 
         // Later it is opened again from the saved bytes and the rest arrives.
-        val restored = StateCodec.decode(saved, rnd)!!
+        val restored = StateCodec.decode(saved, rnd).conversations.single()
         assertEquals(1, restored.reassembler.pending.size)
         assertEquals(listOf(text), receive(restored.ratchet, restored.reassembler, envelopes.drop(half)))
     }

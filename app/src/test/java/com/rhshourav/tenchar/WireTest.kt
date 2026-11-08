@@ -149,6 +149,62 @@ class WireTest {
         assertNull(Wire.decodeFrame(frames[0].copyOf(65)))
     }
 
+    // ---- profile frames (names and avatars) ------------------------------------------------------------
+
+    @Test
+    fun aProfileRoundTrips() {
+        for ((name, avatar, color) in listOf(
+            Triple("Rafi", "🦊", 3),
+            Triple("আমি রাফি", "", 0),
+            Triple("", "😀", 7),
+            Triple("a".repeat(32), "👨‍👩‍👧‍👦", 5), // the longest name and a 25-byte family emoji
+            Triple("", "", 1),
+        )) {
+            val frame = Wire.encodeProfile(name, avatar, color)
+            assertNotNull("$name $avatar", frame)
+            assertEquals(66, frame!!.size)
+            assertEquals(3, frame[0].toInt())
+            val d = Wire.decodeFrame(frame) as Wire.Decoded.ProfileUpdate
+            assertEquals(name, d.name); assertEquals(avatar, d.avatar); assertEquals(color, d.color)
+        }
+    }
+
+    @Test
+    fun aProfileThatCannotFitOrIsUnsafeIsNotEncoded() {
+        assertNull(Wire.encodeProfile("a".repeat(33), "", 0))
+        assertNull(Wire.encodeProfile("", "a".repeat(29), 0))
+        assertNull(Wire.encodeProfile("x", "", 8))
+        assertNull(Wire.encodeProfile("x", "", -1))
+        assertNull(Wire.encodeProfile("bad\u202Ename", "", 0))
+        assertNull(Wire.encodeProfile("nul\u0000", "", 0))
+    }
+
+    @Test
+    fun profileDecodingIsStrict() {
+        val good = Wire.encodeProfile("Rafi", "🦊", 3)!! // len = 2 + 4 + 4 = 10
+        fun mutate(what: String, change: (ByteArray) -> Unit) =
+            assertNull(what, Wire.decodeFrame(good.copyOf().also(change)))
+        mutate("colour 8") { it[2] = 8 }
+        mutate("avatar longer than the frame holds") { it[3] = 40 }
+        mutate("avatar longer than allowed") { it[3] = 29; it[1] = 35 }
+        mutate("name longer than allowed") { it[1] = (2 + 4 + 33).toByte() }
+        mutate("shorter than the header") { it[1] = 1 }
+        mutate("longer than a frame") { it[1] = 65 }
+        mutate("non-zero padding") { it[40] = 1 }
+        mutate("invalid UTF-8 in the name") { it[8] = 0xFF.toByte() }
+        mutate("control character in the name") { it[8] = 0x07 }
+        mutate("a bidi override in the name") {
+            val bytes = "\u202E".toByteArray(); it[8] = bytes[0]; it[9] = bytes[1]; it[10] = bytes[2]
+        }
+    }
+
+    @Test
+    fun aProfileIsNotAMessage() {
+        val d = Wire.decodeFrame(Wire.encodeProfile("Rafi", "🦊", 3)!!)
+        assertTrue(d is Wire.Decoded.ProfileUpdate)
+        assertNull(Wire.decodeText(Wire.encodeProfile("Rafi", "🦊", 3)!!)) // never read as chat text
+    }
+
     @Test
     fun envelopeBase64HasTheLengthTheRelayExpects() {
         val env = ByteArray(135) { it.toByte() }

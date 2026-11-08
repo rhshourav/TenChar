@@ -23,10 +23,13 @@ import com.rhshourav.tenchar.net.PairOutcome
 import com.rhshourav.tenchar.net.PairingFlow
 import com.rhshourav.tenchar.net.RelayClient
 import com.rhshourav.tenchar.net.Reply
+import com.rhshourav.tenchar.store.AppState
 import com.rhshourav.tenchar.store.Authenticator
 import com.rhshourav.tenchar.store.Conversation
 import com.rhshourav.tenchar.store.KeysLostException
+import com.rhshourav.tenchar.store.KeysLostReason
 import com.rhshourav.tenchar.store.OutboxItem
+import com.rhshourav.tenchar.store.Profile
 import com.rhshourav.tenchar.store.StateCodec
 import com.rhshourav.tenchar.store.StoredMessage
 import com.rhshourav.tenchar.store.Vault
@@ -40,9 +43,10 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.IOException
+import java.util.Base64
 import javax.crypto.Cipher
 
-enum class Screen { Setup, Gate, Pair, EnterCode, Waiting, Verify, Chat, Settings, About, KeysReset }
+enum class Screen { Setup, Gate, Chats, Pair, EnterCode, Waiting, Verify, Chat, ChatSettings, Settings, About, KeysReset }
 
 enum class AutoLock(val millis: Long) {
     Immediately(0L),
@@ -52,18 +56,38 @@ enum class AutoLock(val millis: Long) {
 
 enum class Delivery { Queued, Sent }
 
-enum class Notice { Mismatch, Forgotten, Timeout, Unreachable, Tampered, Full, Storage }
+enum class Notice { Mismatch, Forgotten, Timeout, Unreachable, Tampered, Full, Storage, TooManyChats }
 
 /** How the relays look from here. Gone means every relay says the conversation no longer exists. */
 enum class Connection { Online, Offline, Gone }
+
+/** Why turning notifications on did not work. */
+enum class PushProblem { Unsupported, Rejected, Unreachable }
 
 class ChatMessage(val id: Long, val text: String, val mine: Boolean, initial: Delivery?) {
     var delivery by mutableStateOf(initial)
 }
 
+/** What the screens show about one chat. A mirror of the saved [Conversation], updated as it changes. */
+class ChatEntry(val id: String) {
+    /** The other person, as you see them: your own label if you set one, else what they shared. */
+    var name by mutableStateOf("")
+    var avatar by mutableStateOf("")
+    var color by mutableStateOf(0)
+    var meName by mutableStateOf("")
+    var meAvatar by mutableStateOf("")
+    var meColor by mutableStateOf(0)
+    var theirLabelIsMine by mutableStateOf(false)
+    var unread by mutableStateOf(0)
+    var verified by mutableStateOf(false)
+    var notifications by mutableStateOf(false)
+    var endpoints by mutableStateOf<List<String>>(emptyList())
+}
+
 /**
- * The one place that holds state. Secrets live in [conversation] and [dek] only
- * while unlocked; [lock] overwrites them. Everything on disk goes through [Vault].
+ * The one place that holds state. Secrets live in [app] and [dek] only while unlocked; [lock] overwrites them.
+ * Everything on disk goes through [Vault], and **nothing is ever deleted because of an error**: only the person
+ * choosing "erase" or "forget" removes data.
  */
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     var screen by mutableStateOf(Screen.Gate)
@@ -72,6 +96,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var code by mutableStateOf<String?>(null)
         private set
+
+    /** The pairing code as typed, without hyphens. The field draws the hyphens. */
     var entry by mutableStateOf("")
         private set
     var draft by mutableStateOf("")
@@ -79,12 +105,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var autoLock by mutableStateOf(AutoLock.Seconds30)
         private set
 
-    /** The main relay. Not a secret, but it is metadata, so it stays private to the app. */
+    /** Relays for the next chat you pair. Each chat keeps the relays it was paired on. */
     var relayUrl by mutableStateOf(Constants.DEFAULT_RELAY_URL)
         private set
     var fallbackEnabled by mutableStateOf(true)
         private set
     var fallbackUrl by mutableStateOf(Constants.FALLBACK_RELAY_URL)
+        private set
+    var pushServer by mutableStateOf(Constants.DEFAULT_PUSH_SERVER)
         private set
 
     /** True while this phone is joining with a typed code (as opposed to showing its own). */
@@ -94,12 +122,33 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var unlockFailed by mutableStateOf(false)
         private set
+
+    /** Set when the saved data cannot be opened. The files are still on the phone. */
+    var lostReason by mutableStateOf<KeysLostReason?>(null)
+        private set
     var connection by mutableStateOf(Connection.Online)
         private set
     var verification by mutableStateOf<String?>(null)
         private set
 
+    /** What a new chat starts with as "you". */
+    var defaultProfile by mutableStateOf(Profile.EMPTY)
+        private set
+
+    /** The address to subscribe to in the push app, shown after notifications are turned on. */
+    var pushHelp by mutableStateOf<String?>(null)
+        private set
+    var pushProblem by mutableStateOf<PushProblem?>(null)
+        private set
+    var currentId by mutableStateOf<String?>(null)
+        private set
+
+    val chats = mutableStateListOf<ChatEntry>()
+
+    /** The messages of the open chat. */
     val messages = mutableStateListOf<ChatMessage>()
+
+    val current: ChatEntry? get() = chats.firstOrNull { it.id == currentId }
 
     private val prefs by lazy {
         getApplication<Application>().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -109,14 +158,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val gate = Mutex()
     private val clients = HashMap<String, RelayClient>()
     private val retryAt = HashMap<String, Long>()
+    private val goneRounds = HashMap<String, Int>()
+    private val connectionOf = HashMap<String, Connection>()
+    private val nextDue = HashMap<String, Long>()
+    private val entries = HashMap<String, ChatEntry>()
 
     private var dek: ByteArray? = null
-    private var conversation: Conversation? = null
+    private var app: AppState? = null
     private var foreground = false
     private var pairingJob: Job? = null
     private var flow: PairingFlow? = null
     private var pollJob: Job? = null
-    private var goneRounds = 0
     private val wake = Channel<Unit>(Channel.CONFLATED)
 
     val setupDone: Boolean get() = prefs.getBoolean(KEY_SETUP_DONE, false)
@@ -126,13 +178,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         prefs.getString(KEY_RELAY, null)?.let { RelayAddress.normalise(it) }?.let { relayUrl = it }
         fallbackEnabled = prefs.getBoolean(KEY_FALLBACK_ON, true)
         prefs.getString(KEY_FALLBACK, null)?.let { RelayAddress.normalise(it) }?.let { fallbackUrl = it }
+        prefs.getString(KEY_PUSH_SERVER, null)?.let { RelayAddress.normalise(it) }?.let { pushServer = it }
         AutoLock.entries.firstOrNull { it.name == prefs.getString(KEY_AUTOLOCK, null) }?.let { autoLock = it }
         screen = if (setupDone) Screen.Gate else Screen.Setup
     }
 
-    // ---- settings --------------------------------------------------------------------------------
+    // ---- settings --------------------------------------------------------------------------------------
 
-    /** Saves the main relay. Returns false, changing nothing, if the address is not acceptable. */
+    /** Saves the relay for the next chat. Returns false, changing nothing, if the address is not acceptable. */
     fun saveRelay(input: String): Boolean {
         val value = RelayAddress.normalise(input) ?: return false
         relayUrl = value
@@ -164,6 +217,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().putBoolean(KEY_FALLBACK_ON, value).apply()
     }
 
+    fun savePushServer(input: String): Boolean {
+        val value = RelayAddress.normalise(input) ?: return false
+        pushServer = value
+        if (value == Constants.DEFAULT_PUSH_SERVER) prefs.edit().remove(KEY_PUSH_SERVER).apply()
+        else prefs.edit().putString(KEY_PUSH_SERVER, value).apply()
+        return true
+    }
+
+    fun resetPushServer() {
+        pushServer = Constants.DEFAULT_PUSH_SERVER
+        prefs.edit().remove(KEY_PUSH_SERVER).apply()
+    }
+
     fun chooseAutoLock(value: AutoLock) {
         autoLock = value
         prefs.edit().putString(KEY_AUTOLOCK, value.name).apply()
@@ -182,7 +248,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun clientFor(endpoint: String): RelayClient = clients.getOrPut(endpoint) { RelayClient(endpoint) }
 
-    // ---- lock and unlock ---------------------------------------------------------------------------
+    // ---- lock and unlock ---------------------------------------------------------------------------------
 
     /** Starts the system unlock prompt. The first run creates the vault, later runs open it. */
     fun unlock(auth: Authenticator) {
@@ -194,9 +260,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             if (create) vault.cipherForCreate() else vault.cipherForUnlock()
         } catch (e: KeysLostException) {
             unlocking = false
-            keysLost()
+            keysLost(e.reason)
             return
         } catch (e: Exception) {
+            // Temporary: nothing is touched, the person can simply try again.
             unlocking = false
             unlockFailed = true
             return
@@ -216,7 +283,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             if (create) vault.completeCreate(cipher) else vault.completeUnlock(cipher)
         } catch (e: KeysLostException) {
             unlocking = false
-            keysLost()
+            keysLost(e.reason)
             return
         } catch (e: Exception) {
             unlocking = false
@@ -225,35 +292,40 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             try {
-                val plain = withContext(Dispatchers.IO) { vault.load(key) }
-                val conv = plain?.let { bytes ->
-                    try {
-                        StateCodec.decode(bytes, random)
-                    } finally {
-                        bytes.fill(0)
+                val candidates = withContext(Dispatchers.IO) { vault.loadCandidates(key) }
+                var loaded: AppState? = null
+                var resave = false
+                try {
+                    for ((i, bytes) in candidates.withIndex()) {
+                        try {
+                            // Byte 4 is the format version. An older file is read as it is and saved back as the newest.
+                            val older = bytes.size > 4 && bytes[4].toInt() < StateCodec.VERSION
+                            loaded = StateCodec.decode(bytes, random)
+                            resave = i > 0 || older // from the backup, or from an older format: write the current file again
+                            break
+                        } catch (e: IOException) {
+                            // This copy is unreadable: try the next one.
+                        }
                     }
+                } finally {
+                    candidates.forEach { it.fill(0) }
                 }
+                if (candidates.isNotEmpty() && loaded == null) throw KeysLostException(KeysLostReason.StateUnreadable)
+                val state = loaded ?: AppState()
                 dek = key
-                conversation = conv
-                messages.clear()
-                conv?.messages?.forEach { messages.add(it.toUi()) }
-                verification = conv?.verification
-                goneRounds = 0
-                connection = Connection.Online
-                retryAt.clear()
-                goto(
-                    when {
-                        conv == null -> Screen.Pair
-                        !conv.verified -> Screen.Verify
-                        else -> Screen.Chat
-                    },
-                )
+                app = state
+                defaultProfile = state.defaultProfile
+                goneRounds.clear(); connectionOf.clear(); retryAt.clear(); nextDue.clear()
+                syncAll()
+                goto(if (state.conversations.isEmpty()) Screen.Pair else Screen.Chats)
+                if (resave) gate.withLock { persist() }
+                reRegisterPush()
             } catch (e: KeysLostException) {
                 key.fill(0)
-                keysLost()
-            } catch (e: IOException) {
+                keysLost(e.reason)
+            } catch (e: Exception) {
                 key.fill(0)
-                keysLost()
+                unlockFailed = true
             } finally {
                 unlocking = false
             }
@@ -265,35 +337,52 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (screen == Screen.Setup || screen == Screen.KeysReset || screen == Screen.Gate) return
         cancelPairing()
         stopPolling()
-        conversation?.wipe()
-        conversation = null
+        app?.wipe()
+        app = null
         dek?.fill(0)
         dek = null
-        messages.clear()
+        chats.clear(); entries.clear(); messages.clear()
+        currentId = null
         verification = null
         code = null
         entry = ""
         draft = ""
         notice = null
+        pushHelp = null
+        pushProblem = null
         goto(Screen.Gate)
     }
 
-    /** The Keystore key is gone (screen lock removed or changed). Nothing can be recovered, by design. */
-    private fun keysLost() {
+    /**
+     * The saved data cannot be opened and trying again will not help (for example Android removed the key). The files are
+     * **not** deleted: the person sees why, can try again, and erases only by choosing to.
+     */
+    private fun keysLost(reason: KeysLostReason) {
         cancelPairing()
         stopPolling()
-        conversation?.wipe()
-        conversation = null
+        app?.wipe()
+        app = null
         dek?.fill(0)
         dek = null
-        messages.clear()
+        chats.clear(); entries.clear(); messages.clear()
+        currentId = null
         verification = null
-        vault.wipe()
+        lostReason = reason
         goto(Screen.KeysReset)
     }
 
-    /** After "Keys were reset": go to the gate, where a new vault is made, then pairing starts. */
-    fun pairAgain() {
+    /** "Try again" on the keys-reset screen: back to the gate with nothing changed. */
+    fun retryUnlock() {
+        lostReason = null
+        unlockFailed = false
+        goto(Screen.Gate)
+    }
+
+    /** "Erase and start over": the only way saved data is removed after a failure, and only by the person's choice. */
+    fun eraseAndStartOver() {
+        vault.wipe()
+        lostReason = null
+        unlockFailed = false
         notice = null
         goto(Screen.Gate)
     }
@@ -303,7 +392,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         updatePolling()
     }
 
-    // ---- navigation --------------------------------------------------------------------------------
+    // ---- navigation --------------------------------------------------------------------------------------
 
     private fun goto(target: Screen) {
         screen = target
@@ -312,8 +401,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun back() {
         when (screen) {
-            Screen.Settings -> goto(Screen.Chat)
+            Screen.Chat, Screen.Verify -> closeChat()
+            Screen.ChatSettings -> goto(Screen.Chat)
+            Screen.Settings -> goto(Screen.Chats)
             Screen.About -> goto(Screen.Settings)
+            Screen.Pair -> if (chats.isNotEmpty()) goto(Screen.Chats)
             Screen.EnterCode -> goto(Screen.Pair)
             Screen.Waiting -> cancelWaiting()
             else -> Unit
@@ -322,7 +414,69 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun open(target: Screen) = goto(target)
 
-    // ---- pairing ---------------------------------------------------------------------------------
+    // ---- chats --------------------------------------------------------------------------------------------
+
+    private fun conversation(id: String?): Conversation? = id?.let { app?.find(it) }
+
+    private fun syncEntry(e: ChatEntry, c: Conversation) {
+        val them = c.them
+        e.name = them.name; e.avatar = them.avatar; e.color = them.color
+        e.meName = c.me.name; e.meAvatar = c.me.avatar; e.meColor = c.me.color
+        e.theirLabelIsMine = c.themLocal != null
+        e.unread = c.unread
+        e.verified = c.verified
+        e.notifications = c.pushUrl != null
+        e.endpoints = c.endpoints
+    }
+
+    private fun entryFor(c: Conversation): ChatEntry =
+        entries.getOrPut(c.localId) { ChatEntry(c.localId) }.also { syncEntry(it, c) }
+
+    /** Rebuilds the list of chats. Only for structural changes (unlock, add, delete); field changes use [syncEntry]. */
+    private fun syncAll() {
+        val state = app
+        chats.clear()
+        if (state == null) {
+            entries.clear()
+            return
+        }
+        entries.keys.retainAll(state.conversations.map { it.localId }.toSet())
+        for (c in state.conversations) chats.add(entryFor(c))
+    }
+
+    fun openChat(id: String) {
+        val conv = conversation(id) ?: return
+        currentId = id
+        conv.unread = 0
+        entries[id]?.let { syncEntry(it, conv) }
+        messages.clear()
+        conv.messages.forEach { messages.add(it.toUi()) }
+        verification = conv.verification
+        connection = connectionOf[id] ?: Connection.Online
+        draft = ""
+        goto(if (conv.verified) Screen.Chat else Screen.Verify)
+        viewModelScope.launch { gate.withLock { persist() } }
+        wake.trySend(Unit)
+    }
+
+    fun closeChat() {
+        currentId = null
+        messages.clear()
+        verification = null
+        draft = ""
+        goto(Screen.Chats)
+    }
+
+    fun startNewChat() {
+        notice = null
+        if (chats.size >= AppState.MAX_CHATS) {
+            notice = Notice.TooManyChats
+            return
+        }
+        goto(Screen.Pair)
+    }
+
+    // ---- pairing -----------------------------------------------------------------------------------------
 
     fun startWaiting() {
         notice = null
@@ -339,8 +493,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         goto(Screen.EnterCode)
     }
 
+    /** Keeps only the valid letters, upper case, at most 16. The field shows them with hyphens. */
     fun onEntry(input: String) {
-        entry = Pairing.formatPartial(input)
+        entry = Pairing.normalise(input).filter { it in Constants.CODE_ALPHABET }.take(Constants.CODE_LEN)
     }
 
     fun join() {
@@ -371,7 +526,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun beginPairing(raw: String, creator: Boolean) {
         pairingJob?.cancel()
-        val relays = endpoints()
+        val relays = endpoints() // this chat keeps these relays from now on
         pairingJob = viewModelScope.launch {
             var derived: Pairing.Derived? = null
             var member: LocalMember? = null
@@ -412,6 +567,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun completePairing(derived: Pairing.Derived, me: LocalMember, outcome: PairOutcome.Success) {
+        val state = app ?: return
         val peerEk = Hex.decode(outcome.peer.ek)
         val agreement = try {
             Handshake.agree(me.keys, me.memberId, Hex.decode(outcome.peer.ik), peerEk, outcome.peer.memberId, derived.codeKey)
@@ -437,13 +593,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             ratchet = ratchet,
             verification = agreement.verification,
             verified = false,
+            me = defaultProfile,
         )
         val saved = gate.withLock {
-            conversation = conv
+            state.conversations += conv
             persist()
         }
         if (!saved) {
-            gate.withLock { conversation = null }
+            gate.withLock { state.conversations.remove(conv) }
             conv.wipe()
             val f = flow
             flow = null
@@ -455,6 +612,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         flow = null
+        chats.add(entryFor(conv))
+        currentId = conv.localId
+        messages.clear()
         verification = conv.verification
         code = null
         joining = false
@@ -474,49 +634,181 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun verifyMatches() {
-        val conv = conversation ?: return
+        val conv = conversation(currentId) ?: return
         conv.verified = true
+        entries[conv.localId]?.let { syncEntry(it, conv) }
         goto(Screen.Chat)
+        viewModelScope.launch {
+            gate.withLock {
+                queueProfile(conv) // tell them how you appear
+                persist()
+            }
+            wake.trySend(Unit)
+        }
+    }
+
+    fun verifyMismatch() = deleteChat(currentId, Notice.Mismatch)
+
+    fun forgetChat(id: String) = deleteChat(id, Notice.Forgotten)
+
+    /** Deletes one chat here and, best effort, its rooms on its relays (which also removes its notification address). */
+    private fun deleteChat(id: String?, reason: Notice?) {
+        val state = app ?: return
+        val conv = id?.let { state.find(it) } ?: return
+        val relays = conv.endpoints
+        val room = conv.room
+        val token = conv.memberToken
+        viewModelScope.launch {
+            for (ep in relays) {
+                try {
+                    clientFor(ep).delete(room, token)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Best effort; the relay deletes idle rooms itself.
+                }
+            }
+        }
+        conv.wipe()
+        state.conversations.remove(conv)
+        entries.remove(conv.localId)
+        syncAll()
+        if (currentId == conv.localId) {
+            currentId = null
+            messages.clear()
+            verification = null
+            draft = ""
+        }
+        notice = reason
+        goto(if (state.conversations.isEmpty()) Screen.Pair else Screen.Chats)
         viewModelScope.launch { gate.withLock { persist() } }
     }
 
-    fun verifyMismatch() = wipeConversation(Notice.Mismatch)
+    // ---- names, avatars, notifications -----------------------------------------------------------------
 
-    fun forgetConversation() = wipeConversation(Notice.Forgotten)
+    /** How you appear in this chat. Sent to the other person. */
+    fun setMyProfile(id: String, profile: Profile) {
+        val conv = conversation(id) ?: return
+        conv.me = profile
+        entries[id]?.let { syncEntry(it, conv) }
+        viewModelScope.launch {
+            gate.withLock {
+                if (conv.verified) queueProfile(conv)
+                persist()
+            }
+            wake.trySend(Unit)
+        }
+    }
 
-    /** Deletes the conversation here and, best effort, its rooms on the relays. */
-    private fun wipeConversation(reason: Notice?) {
-        val conv = conversation
-        stopPolling()
-        if (conv != null) {
-            val relays = conv.endpoints
-            val room = conv.room
-            val token = conv.memberToken
-            viewModelScope.launch {
-                for (ep in relays) {
+    /** How you see the other person on this phone. Null goes back to whatever they shared. Never sent. */
+    fun setThemProfile(id: String, profile: Profile?) {
+        val conv = conversation(id) ?: return
+        conv.themLocal = profile
+        entries[id]?.let { syncEntry(it, conv) }
+        viewModelScope.launch { gate.withLock { persist() } }
+    }
+
+    /** What new chats start with as "you". Chats you already have are not changed. */
+    fun updateDefaultProfile(profile: Profile) {
+        val state = app ?: return
+        state.defaultProfile = profile
+        defaultProfile = profile
+        viewModelScope.launch { gate.withLock { persist() } }
+    }
+
+    /** Queues a profile frame for the other person. Call with [gate] held. */
+    private fun queueProfile(conv: Conversation) {
+        if (conv.me.isEmpty) return
+        val frame = Wire.encodeProfile(conv.me.name, conv.me.avatar, conv.me.color) ?: return
+        try {
+            conv.outbox.add(OutboxItem(PROFILE_MSG_ID, conv.ratchet.encrypt(frame)))
+        } catch (e: IllegalStateException) {
+            // The chain is used up: nothing more can be sent on this chat.
+        } finally {
+            frame.fill(0)
+        }
+    }
+
+    /**
+     * Turns notifications for a chat on or off. Notifications come from a push service (ntfy by default), not from
+     * Google: the relay sends it a short fixed "New message" notice at a secret address only this chat uses. The
+     * person subscribes to that address in the push app.
+     */
+    fun setNotifications(id: String, on: Boolean) {
+        val state = app ?: return
+        val conv = state.find(id) ?: return
+        viewModelScope.launch {
+            if (on) {
+                val url = pushServer.trimEnd('/') + "/" + newTopic()
+                var ok = false
+                var problem: PushProblem? = null
+                for (ep in conv.endpoints) {
+                    when (val r = clientFor(ep).registerPush(conv.room, conv.memberToken, url)) {
+                        is Reply.Ok -> ok = true
+                        // 400: this relay does not allow that push service. 404 or 501: the relay predates push.
+                        is Reply.Rejected -> if (r.status == 400) problem = PushProblem.Rejected
+                        else if (problem == null) problem = PushProblem.Unsupported
+                        Reply.Unreachable -> if (problem == null) problem = PushProblem.Unreachable
+                    }
+                }
+                if (app !== state) return@launch
+                if (ok) {
+                    gate.withLock {
+                        conv.pushUrl = url
+                        persist()
+                    }
+                    entries[id]?.let { syncEntry(it, conv) }
+                    pushProblem = null
+                    pushHelp = url
+                } else {
+                    pushProblem = problem ?: PushProblem.Unreachable
+                }
+            } else {
+                for (ep in conv.endpoints) clientFor(ep).registerPush(conv.room, conv.memberToken, "")
+                if (app !== state) return@launch
+                gate.withLock {
+                    conv.pushUrl = null
+                    persist()
+                }
+                entries[id]?.let { syncEntry(it, conv) }
+            }
+        }
+    }
+
+    fun dismissPushHelp() {
+        pushHelp = null
+    }
+
+    fun dismissPushProblem() {
+        pushProblem = null
+    }
+
+    /** A relay that lost its data (a free host restarting) forgets addresses, so they are registered again on unlock. */
+    private fun reRegisterPush() {
+        val state = app ?: return
+        viewModelScope.launch {
+            for (conv in state.conversations.toList()) {
+                val url = conv.pushUrl ?: continue
+                for (ep in conv.endpoints) {
                     try {
-                        clientFor(ep).delete(room, token)
+                        clientFor(ep).registerPush(conv.room, conv.memberToken, url)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        // Best effort; the relay deletes idle rooms itself.
+                        // Best effort.
                     }
                 }
             }
         }
-        conv?.wipe()
-        conversation = null
-        messages.clear()
-        verification = null
-        code = null
-        entry = ""
-        draft = ""
-        notice = reason
-        goto(Screen.Pair)
-        viewModelScope.launch { gate.withLock { persist() } }
     }
 
-    // ---- messaging -----------------------------------------------------------------------------------
+    private fun newTopic(): String {
+        // 24 random bytes: 192 bits, written as 32 characters from A-Z a-z 0-9 _ - (what the relay accepts).
+        val bytes = ByteArray(24).also(random::nextBytes)
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes).also { bytes.fill(0) }
+    }
+
+    // ---- messaging -----------------------------------------------------------------------------------------
 
     fun onDraft(input: String) {
         // The composer is one logical line: a pasted line break or tab becomes a space.
@@ -526,7 +818,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun send() {
         val text = draft.trim()
-        val conv = conversation ?: return
+        val state = app ?: return
+        val conv = conversation(currentId) ?: return
         if (!conv.verified || text.isEmpty()) return
         // More than one message's worth of text becomes several messages, each shown as its own bubble.
         val pieces = MessageLimits.split(text)
@@ -536,7 +829,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         draft = ""
         viewModelScope.launch {
             gate.withLock {
-                if (conversation !== conv) return@withLock
+                if (app !== state) return@withLock
                 for (piece in pieces) {
                     val id = conv.nextMsgId++
                     // One frame for a short message, several fragments for a longer one; the id ties them together.
@@ -560,10 +853,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun addMessage(conv: Conversation, message: StoredMessage) {
         conv.messages.add(message)
-        messages.add(message.toUi())
+        val open = conv.localId == currentId
+        if (open) messages.add(message.toUi())
         while (conv.messages.size > Conversation.MAX_MESSAGES) {
             conv.messages.removeAt(0)
-            if (messages.isNotEmpty()) messages.removeAt(0)
+            if (open && messages.isNotEmpty()) messages.removeAt(0)
         }
     }
 
@@ -576,9 +870,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         },
     )
 
+    // ---- talking to the relays ------------------------------------------------------------------------------
+
     private fun updatePolling() {
-        val should = foreground && dek != null && conversation?.verified == true &&
-            (screen == Screen.Chat || screen == Screen.Settings || screen == Screen.About)
+        val state = app
+        val should = foreground && dek != null && state != null && state.conversations.any { it.verified } &&
+            screen != Screen.Setup && screen != Screen.Gate && screen != Screen.KeysReset
         if (should) {
             if (pollJob?.isActive != true) pollJob = viewModelScope.launch { pollLoop() }
         } else {
@@ -606,58 +903,79 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private enum class Probe { Reached, Gone, Down }
 
-    /** One round: send whatever is queued, then collect whatever is waiting. True if a relay answered. */
+    /** One round over every verified chat: the open one every time, the others now and then. True if a relay answered. */
     private suspend fun cycle(): Boolean {
-        val conv = conversation ?: return true
+        val state = app ?: return true
         return gate.withLock {
-            if (conversation !== conv) return@withLock true
-            flushOutbox(conv)
-            var reached = 0
-            var gone = 0
-            for (ep in conv.endpoints) {
-                if (conversation !== conv) return@withLock true
-                if (inBackoff(ep)) {
-                    gone++
-                    continue
-                }
-                when (pollEndpoint(conv, ep)) {
-                    Probe.Reached -> {
-                        reached++
-                        retryAt.remove(ep)
-                    }
-                    Probe.Gone -> {
-                        gone++
-                        retryAt[ep] = now() + GONE_RETRY_MS
-                    }
-                    Probe.Down -> Unit
-                }
+            if (app !== state) return@withLock true
+            var any = false
+            for (conv in state.conversations.toList()) {
+                if (!conv.verified) continue
+                if (app !== state) return@withLock true
+                val open = conv.localId == currentId
+                if (!open && (nextDue[conv.localId] ?: 0L) > now()) continue
+                nextDue[conv.localId] = now() + if (open) 0L else BACKGROUND_CHAT_POLL_MS
+                if (cycleChat(conv, state)) any = true
             }
-            when {
-                reached > 0 -> {
-                    goneRounds = 0
-                    connection = Connection.Online
-                }
-                gone == conv.endpoints.size -> {
-                    goneRounds++
-                    if (goneRounds >= 3) connection = Connection.Gone
-                }
-                else -> connection = Connection.Offline
-            }
-            reached > 0
+            any
         }
     }
 
-    private fun inBackoff(endpoint: String): Boolean = (retryAt[endpoint] ?: 0L) > now()
+    /** Sends what is queued for [conv], then collects what is waiting. True if one of its relays answered. */
+    private suspend fun cycleChat(conv: Conversation, state: AppState): Boolean {
+        flushOutbox(conv, state)
+        var reached = 0
+        var gone = 0
+        for (ep in conv.endpoints) {
+            if (app !== state) return true
+            if (inBackoff(conv, ep)) {
+                gone++
+                continue
+            }
+            when (pollEndpoint(conv, state, ep)) {
+                Probe.Reached -> {
+                    reached++
+                    retryAt.remove(backoffKey(conv, ep))
+                }
+                Probe.Gone -> {
+                    gone++
+                    retryAt[backoffKey(conv, ep)] = now() + GONE_RETRY_MS
+                }
+                Probe.Down -> Unit
+            }
+        }
+        val id = conv.localId
+        val status = when {
+            reached > 0 -> {
+                goneRounds[id] = 0
+                Connection.Online
+            }
+            gone == conv.endpoints.size -> {
+                val n = (goneRounds[id] ?: 0) + 1
+                goneRounds[id] = n
+                if (n >= 3) Connection.Gone else connectionOf[id] ?: Connection.Online
+            }
+            else -> Connection.Offline
+        }
+        connectionOf[id] = status
+        if (id == currentId) connection = status
+        return reached > 0
+    }
 
-    private suspend fun flushOutbox(conv: Conversation) {
+    private fun backoffKey(conv: Conversation, endpoint: String) = "${conv.localId}@$endpoint"
+
+    private fun inBackoff(conv: Conversation, endpoint: String): Boolean =
+        (retryAt[backoffKey(conv, endpoint)] ?: 0L) > now()
+
+    private suspend fun flushOutbox(conv: Conversation, state: AppState) {
         while (conv.outbox.isNotEmpty()) {
             val item = conv.outbox.first()
             val text = Wire.toBase64(item.envelope)
             var sent = false
             for (ep in conv.endpoints) {
-                if (inBackoff(ep)) continue
+                if (inBackoff(conv, ep)) continue
                 val reply = clientFor(ep).post(conv.room, conv.memberToken, text)
-                if (conversation !== conv) return
+                if (app !== state) return
                 if (reply is Reply.Ok) {
                     sent = true
                     break
@@ -667,21 +985,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             conv.outbox.removeAt(0)
             item.envelope.fill(0)
             // A long message is several envelopes; it is Sent when the last of them has been accepted.
-            if (conv.outbox.none { it.msgId == item.msgId }) {
+            if (item.msgId != PROFILE_MSG_ID && conv.outbox.none { it.msgId == item.msgId }) {
                 conv.messages.firstOrNull { it.id == item.msgId }?.delivery = Conversation.DELIVERY_SENT
-                messages.firstOrNull { it.id == item.msgId }?.delivery = Delivery.Sent
+                if (conv.localId == currentId) messages.firstOrNull { it.id == item.msgId }?.delivery = Delivery.Sent
             }
             persist()
         }
     }
 
-    private suspend fun pollEndpoint(conv: Conversation, endpoint: String): Probe {
+    private suspend fun pollEndpoint(conv: Conversation, state: AppState, endpoint: String): Probe {
         val client = clientFor(endpoint)
         var after = conv.lastIds[endpoint] ?: 0L
         var probe = Probe.Down
         repeat(MAX_PAGES) {
             val reply = client.fetch(conv.room, conv.memberToken, after)
-            if (conversation !== conv) return probe
+            if (app !== state) return probe
             when (reply) {
                 is Reply.Ok -> {
                     probe = Probe.Reached
@@ -718,20 +1036,31 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val frame = conv.ratchet.decrypt(envelope) ?: return
         val decoded = Wire.decodeFrame(frame)
         frame.fill(0)
-        // A whole message, or one piece of a longer one (shown once the last piece arrives).
         val text = when (decoded) {
+            // A whole message, or one piece of a longer one (shown once the last piece arrives).
             is Wire.Decoded.Text -> decoded.text
             is Wire.Decoded.Fragment -> conv.reassembler.accept(decoded)
+            is Wire.Decoded.ProfileUpdate -> {
+                // How they appear: cleaned the same way as anything typed here, then shown. Not a message.
+                conv.themShared = Profile.of(decoded.name, decoded.avatar, decoded.color)
+                entries[conv.localId]?.let { syncEntry(it, conv) }
+                null
+            }
             null -> null
         } ?: return
         addMessage(conv, StoredMessage(conv.nextMsgId++, text, false, Conversation.DELIVERY_NONE))
+        if (conv.localId != currentId) {
+            conv.unread = (conv.unread + 1).coerceAtMost(UNREAD_CAP)
+            entries[conv.localId]?.let { syncEntry(it, conv) }
+        }
     }
 
-    /** Encrypts the current conversation and writes it. False if locked or the write failed. */
+    /** Encrypts every chat and writes it. False if locked or the write failed. */
     private suspend fun persist(): Boolean {
         // A copy, so a lock that overwrites the key mid-write cannot make the file unreadable.
         val key = dek?.copyOf() ?: return false
-        val plain = StateCodec.encode(conversation)
+        val state = app ?: return false
+        val plain = StateCodec.encode(state)
         return try {
             withContext(Dispatchers.IO) { vault.save(key, plain) }
             true
@@ -747,7 +1076,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         stopPolling()
-        conversation?.wipe()
+        app?.wipe()
         dek?.fill(0)
         super.onCleared()
     }
@@ -755,14 +1084,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private companion object {
         /** Frames waiting to go out. Ten full messages are about 350; the relay keeps 1,000 per person. */
         const val MAX_OUTBOX_FRAMES = 1500
+
+        /** The outbox id of frames that are not chat messages (profile updates). */
+        const val PROFILE_MSG_ID = -1L
+        const val UNREAD_CAP = 999
         const val PREFS = "tenchar_settings"
         const val KEY_RELAY = "relay_url"
         const val KEY_FALLBACK = "fallback_url"
         const val KEY_FALLBACK_ON = "fallback_enabled"
+        const val KEY_PUSH_SERVER = "push_server"
         const val KEY_AUTOLOCK = "auto_lock"
         const val KEY_SETUP_DONE = "setup_done"
         const val POLL_MS = 3_000L
         const val BACKOFF_MS = 10_000L
+
+        /** Chats that are not open are checked this often. */
+        const val BACKGROUND_CHAT_POLL_MS = 10_000L
         const val GONE_RETRY_MS = 10 * 60_000L
         const val JOIN_TIMEOUT_MS = 120_000L
         const val MAX_PAGES = 20

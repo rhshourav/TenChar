@@ -91,7 +91,12 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
+import com.rhshourav.tenchar.CodeFormat
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -107,7 +112,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** Dialogs are separate windows, so they need FLAG_SECURE of their own. */
-private val SecureDialog = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn)
+internal val SecureDialog = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn)
 
 @Composable
 fun TenCharApp(
@@ -125,8 +130,13 @@ fun TenCharApp(
                 LockRequiredScreen(onOpenSecuritySettings)
             } else {
                 BackHandler(
-                    enabled = vm.screen == Screen.Settings || vm.screen == Screen.About ||
-                        vm.screen == Screen.EnterCode || vm.screen == Screen.Waiting,
+                    enabled = when (vm.screen) {
+                        Screen.Chat, Screen.ChatSettings, Screen.Verify, Screen.Settings, Screen.About,
+                        Screen.EnterCode, Screen.Waiting -> true
+                        // From the pairing screen, back goes to the chat list, if there is one.
+                        Screen.Pair -> vm.chats.isNotEmpty()
+                        else -> false
+                    },
                 ) { vm.back() }
                 AnimatedContent(
                     targetState = vm.screen,
@@ -145,6 +155,8 @@ fun TenCharApp(
                     when (screen) {
                         Screen.Setup -> SetupScreen(vm, onUnlock)
                         Screen.Gate -> GateScreen(vm, onUnlock)
+                        Screen.Chats -> ChatsScreen(vm)
+                        Screen.ChatSettings -> ChatSettingsScreen(vm)
                         Screen.Pair -> PairScreen(vm)
                         Screen.EnterCode -> EnterCodeScreen(vm)
                         Screen.Waiting -> WaitingScreen(vm)
@@ -267,7 +279,10 @@ private fun SetupScreen(vm: AppViewModel, onUnlock: () -> Unit) {
 
 @Composable
 private fun PairScreen(vm: AppViewModel) {
+    val hasChats = vm.chats.isNotEmpty()
     TenCharScreen(
+        title = if (hasChats) stringResource(R.string.chats_new) else null,
+        onBack = if (hasChats) vm::back else null,
         contentArrangement = Arrangement.Center,
         contentAlignment = Alignment.CenterHorizontally,
         bottomBar = {
@@ -277,31 +292,7 @@ private fun PairScreen(vm: AppViewModel) {
     ) {
         val notice = vm.notice
         if (notice != null) {
-            val warning = notice != Notice.Forgotten
-            GlassCard(
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                tint = tintOf(if (warning) Tc.Peach else Tc.Lavender, if (warning) Palette.TINT_CAUTION else Palette.TINT_INFO),
-                shape = RoundedCornerShape(22.dp),
-            ) {
-                Row(Modifier.padding(18.dp)) {
-                    GlowDot(if (warning) Tc.Peach else Tc.Lavender, 8.dp, Modifier.padding(top = 9.dp))
-                    Spacer(Modifier.width(14.dp))
-                    Text(
-                        text = stringResource(
-                            when (notice) {
-                                Notice.Mismatch -> R.string.notice_mismatch
-                                Notice.Forgotten -> R.string.notice_forgotten
-                                Notice.Timeout -> R.string.notice_timeout
-                                Notice.Unreachable -> R.string.notice_unreachable
-                                Notice.Tampered -> R.string.notice_tampered
-                                Notice.Full -> R.string.notice_full
-                                Notice.Storage -> R.string.notice_storage
-                            },
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
+            NoticeCard(notice)
             Spacer(Modifier.height(28.dp))
         }
         HeroBlock(stringResource(R.string.pair_title), stringResource(R.string.pair_body), diameter = 132.dp)
@@ -315,11 +306,11 @@ private fun PairScreen(vm: AppViewModel) {
  * pairing screens because both phones must use the same relay to find each other.
  */
 @Composable
-private fun RelayLink(vm: AppViewModel) {
+internal fun RelayLink(vm: AppViewModel) {
     var show by remember { mutableStateOf(false) }
     GlassCard(shape = RoundedCornerShape(22.dp)) {
         GlassRow(
-            text = stringResource(R.string.settings_relay),
+            text = stringResource(R.string.relay_for_chat),
             onClick = { show = true },
             detail = vm.relayUrl.removePrefix("https://"),
         )
@@ -338,7 +329,7 @@ private fun RelayLink(vm: AppViewModel) {
 @Composable
 private fun EnterCodeScreen(vm: AppViewModel) {
     val valid = Pairing.isValid(vm.entry)
-    val symbols = vm.entry.count { it != '-' }
+    val symbols = vm.entry.length
     var focused by remember { mutableStateOf(false) }
     // Only complain once the person has left the field with an unfinished code.
     val showError = !focused && symbols in 1 until Constants.CODE_LEN
@@ -361,6 +352,9 @@ private fun EnterCodeScreen(vm: AppViewModel) {
                     .onFocusChanged { focused = it.isFocused },
                 singleLine = true,
                 textStyle = EntryStyle,
+                // The field holds plain letters; the hyphens are only drawn, so typing never rewrites the text and the
+                // cursor stays after the letter just typed (it used to jump back in front of it after the 4th, 8th and 12th).
+                visualTransformation = CodeTransformation,
                 placeholder = { Text(stringResource(R.string.enter_hint), style = EntryStyle) },
                 isError = showError,
                 colors = tcFieldColors(),
@@ -389,6 +383,20 @@ private fun EnterCodeScreen(vm: AppViewModel) {
                     .semantics { liveRegion = LiveRegionMode.Polite },
             )
         }
+    }
+}
+
+/** Draws XXXX-XXXX-XXXX-XXXX over the plain letters the field holds. See [CodeFormat] for the cursor mapping. */
+private object CodeTransformation : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val rawLength = text.text.length
+        return TransformedText(
+            AnnotatedString(CodeFormat.display(text.text)),
+            object : OffsetMapping {
+                override fun originalToTransformed(offset: Int): Int = CodeFormat.originalToTransformed(offset)
+                override fun transformedToOriginal(offset: Int): Int = CodeFormat.transformedToOriginal(offset, rawLength)
+            },
+        )
     }
 }
 
@@ -524,7 +532,7 @@ private fun WaitingDots(modifier: Modifier = Modifier) {
  * sensitive so the system hides it from clipboard previews (Android 13+; older
  * versions ignore the extra).
  */
-private fun copySensitive(context: Context, text: String) {
+internal fun copySensitive(context: Context, text: String) {
     val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return
     val clip = ClipData.newPlainText("", text)
     clip.description.extras = PersistableBundle().apply {
@@ -537,6 +545,7 @@ private fun copySensitive(context: Context, text: String) {
 private fun VerifyScreen(vm: AppViewModel) {
     TenCharScreen(
         title = stringResource(R.string.verify_title),
+        onBack = vm::back,
         bottomBar = {
             TcButton(stringResource(R.string.verify_match), vm::verifyMatches)
             TcButton(stringResource(R.string.verify_mismatch), vm::verifyMismatch, kind = ButtonKind.Caution)
@@ -562,10 +571,13 @@ private fun ChatScreen(vm: AppViewModel) {
     // Remembers which messages have already played their entrance, so scrolling
     // back to an old one does not replay it.
     val seen = remember { HashSet<Long>() }
+    val chat = vm.current
     TenCharScreen(
-        title = stringResource(R.string.chat_title),
+        title = if (chat != null) chatName(chat, vm.chats.indexOf(chat)) else stringResource(R.string.chat_title),
+        onBack = vm::back,
         scroll = false,
-        actions = { GlassChip(stringResource(R.string.chat_settings), { vm.open(Screen.Settings) }) },
+        leading = if (chat != null) ({ Avatar(chat.avatar, chat.name, chat.color, 40.dp) }) else null,
+        actions = { GlassChip(stringResource(R.string.chat_settings), { vm.open(Screen.ChatSettings) }) },
     ) {
         ConnectionBanner(vm.connection)
         if (vm.messages.isEmpty()) {
@@ -835,120 +847,14 @@ private fun SendButton(fraction: Float, enabled: Boolean, label: String, onClick
 }
 
 @Composable
-private fun SettingsScreen(vm: AppViewModel) {
-    var showNumber by remember { mutableStateOf(false) }
-    var showForget by remember { mutableStateOf(false) }
-    var showRelay by remember { mutableStateOf(false) }
-    var showFallback by remember { mutableStateOf(false) }
-    TenCharScreen(title = stringResource(R.string.settings_title), onBack = vm::back) {
-        SectionTitle(stringResource(R.string.settings_autolock))
-        AutoLockCard(vm)
-        Spacer(Modifier.height(24.dp))
-        GlassCard {
-            GlassRow(stringResource(R.string.settings_show_number), { showNumber = true })
-            RowDivider()
-            GlassRow(
-                text = stringResource(R.string.settings_relay),
-                onClick = { showRelay = true },
-                detail = vm.relayUrl.removePrefix("https://"),
-            )
-            RowDivider()
-            GlassSwitchRow(
-                text = stringResource(R.string.fallback_label),
-                checked = vm.fallbackEnabled,
-                onCheckedChange = vm::enableFallback,
-                detail = stringResource(R.string.fallback_detail),
-            )
-            if (vm.fallbackEnabled) {
-                RowDivider()
-                GlassRow(
-                    text = stringResource(R.string.fallback_address),
-                    onClick = { showFallback = true },
-                    detail = vm.fallbackUrl.removePrefix("https://"),
-                )
-            }
-            RowDivider()
-            GlassRow(stringResource(R.string.settings_about), { vm.open(Screen.About) })
-            RowDivider()
-            GlassRow(stringResource(R.string.settings_forget), { showForget = true }, caution = true)
-        }
-        Text(
-            text = stringResource(R.string.relay_change_note),
-            style = MaterialTheme.typography.labelMedium,
-            color = Tc.InkFaint,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
-        )
-        Spacer(Modifier.height(16.dp))
-    }
-
-    if (showRelay) {
-        RelayDialog(
-            title = stringResource(R.string.relay_title),
-            current = vm.relayUrl,
-            onSave = vm::saveRelay,
-            onReset = vm::resetRelay,
-            onDismiss = { showRelay = false },
-        )
-    }
-    if (showFallback) {
-        RelayDialog(
-            title = stringResource(R.string.fallback_address),
-            current = vm.fallbackUrl,
-            onSave = vm::saveFallback,
-            onReset = vm::resetFallback,
-            onDismiss = { showFallback = false },
-        )
-    }
-    if (showNumber) {
-        AlertDialog(
-            onDismissRequest = { showNumber = false },
-            properties = SecureDialog,
-            containerColor = Tc.Plum,
-            titleContentColor = Tc.Ink,
-            shape = RoundedCornerShape(28.dp),
-            title = { Text(stringResource(R.string.settings_show_number)) },
-            text = { Text(vm.verification.orEmpty(), style = CodeStyle.copy(brush = Tc.Brand)) },
-            confirmButton = {
-                TextButton(
-                    onClick = { showNumber = false },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Tc.Mint),
-                ) { Text(stringResource(R.string.dialog_close)) }
-            },
-        )
-    }
-    if (showForget) {
-        AlertDialog(
-            onDismissRequest = { showForget = false },
-            properties = SecureDialog,
-            containerColor = Tc.Plum,
-            titleContentColor = Tc.Ink,
-            textContentColor = Tc.InkMuted,
-            shape = RoundedCornerShape(28.dp),
-            title = { Text(stringResource(R.string.forget_confirm_title)) },
-            text = { Text(stringResource(R.string.forget_confirm_body)) },
-            confirmButton = {
-                TextButton(
-                    onClick = { showForget = false; vm.forgetConversation() },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Tc.Peach),
-                ) { Text(stringResource(R.string.forget_confirm_yes)) }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showForget = false },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Tc.Ink),
-                ) { Text(stringResource(R.string.cancel)) }
-            },
-        )
-    }
-}
-
-@Composable
-private fun RelayDialog(
+internal fun RelayDialog(
     title: String,
     current: String,
     onSave: (String) -> Boolean,
     onReset: () -> Unit,
     onDismiss: () -> Unit,
+    /** Overrides the default explanation, which is about relays. */
+    body: String? = null,
 ) {
     var input by remember { mutableStateOf(current) }
     var invalid by remember { mutableStateOf(false) }
@@ -967,7 +873,7 @@ private fun RelayDialog(
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(R.string.relay_body), style = MaterialTheme.typography.bodyMedium)
+                Text(body ?: stringResource(R.string.relay_body), style = MaterialTheme.typography.bodyMedium)
                 GlassCard(shape = RoundedCornerShape(16.dp)) {
                     TextField(
                         value = input,
@@ -1023,7 +929,7 @@ private fun RelayDialog(
 }
 
 @Composable
-private fun AutoLockCard(vm: AppViewModel) {
+internal fun AutoLockCard(vm: AppViewModel) {
     GlassCard {
         Column(Modifier.selectableGroup()) {
             AutoLock.entries.forEachIndexed { index, option ->
@@ -1088,24 +994,9 @@ private fun AboutScreen(vm: AppViewModel) {
                 Bullet(stringResource(R.string.about_not_5))
                 Bullet(stringResource(R.string.about_not_6))
                 Bullet(stringResource(R.string.about_not_7))
+                Bullet(stringResource(R.string.about_not_8))
             }
         }
         Spacer(Modifier.height(16.dp))
-    }
-}
-
-@Composable
-private fun KeysResetScreen(vm: AppViewModel, onUnlock: () -> Unit) {
-    TenCharScreen(
-        contentArrangement = Arrangement.Center,
-        contentAlignment = Alignment.CenterHorizontally,
-        bottomBar = {
-            TcButton(stringResource(R.string.keys_reset_pair), {
-                vm.pairAgain()
-                onUnlock()
-            })
-        },
-    ) {
-        HeroBlock(stringResource(R.string.keys_reset_title), stringResource(R.string.keys_reset_body), halo = Tc.Peach)
     }
 }

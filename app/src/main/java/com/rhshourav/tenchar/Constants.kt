@@ -34,6 +34,11 @@ object Constants {
     /** ceil(MAX_MESSAGE_BYTES / MAX_FRAGMENT_DATA): the most frames one message can need. */
     const val MAX_FRAGMENTS = (MAX_MESSAGE_BYTES + MAX_FRAGMENT_DATA - 1) / MAX_FRAGMENT_DATA
 
+    /** A profile (name, avatar emoji, colour) travels in one frame: [color 1][avatarLen 1][avatar][name]. */
+    const val AVATAR_COLORS = 8
+    const val PROFILE_NAME_BYTES = 32
+    const val PROFILE_AVATAR_BYTES = 28
+
     /** Partly received messages kept per conversation. The oldest is dropped beyond this. */
     const val MAX_PENDING_MESSAGES = 16
 
@@ -63,6 +68,9 @@ object Constants {
 
     /** The relay used until the person picks another one in Settings. */
     const val DEFAULT_RELAY_URL = "https://tenchar-relay.onrender.com"
+
+    /** The push service new chats use for notifications until it is changed in Settings. Relays must allow its host. */
+    const val DEFAULT_PUSH_SERVER = "https://ntfy.sh"
 
     /** The optional backup relay. Used when the main relay cannot be reached. */
     const val FALLBACK_RELAY_URL = "https://tenchar-relay.tenchar.workers.dev"

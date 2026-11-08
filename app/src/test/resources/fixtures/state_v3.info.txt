@@ -1,0 +1,5 @@
+afterText=after migration
+room=03030303030303030303030303030303
+memberId=648667afbe59bd9f261ee6d7f6cea7dc
+memberToken=a82107d5f8c24d87247a55c7d58a80a5dd363f72b817a0d7a6b15b5e1332f0ca
+verification=4140 3043

@@ -15,6 +15,8 @@ import java.util.Base64
  *   type 1, text:      the payload is up to 64 bytes of UTF-8, a whole message
  *   type 2, fragment:  the payload is [group 2][index 1][count 1][up to 60 bytes of UTF-8]; the pieces of
  *                      one longer message share a group and are joined in index order by [Reassembler]
+ *   type 3, profile:   the payload is [color 1][avatar length 1][avatar, one emoji][name]; how the sender
+ *                      appears to the other person. Not a message: it is never shown in the chat
  *
  * Envelope (what the relay stores, always 135 bytes, 180 base64 characters):
  *   [version 1][ratchet public key 32][previous chain length 4][n 4]   header, 41 bytes
@@ -24,6 +26,7 @@ object Wire {
     const val VERSION: Byte = 1
     const val TYPE_TEXT = 1
     const val TYPE_FRAGMENT = 2
+    const val TYPE_PROFILE = 3
 
     private val encoder = Base64.getEncoder().withoutPadding()
     private val decoder = Base64.getDecoder()
@@ -35,6 +38,26 @@ object Wire {
 
         /** One piece of a longer message. [data] is raw UTF-8 and may end in the middle of a character. */
         class Fragment(val group: Int, val index: Int, val count: Int, val data: ByteArray) : Decoded
+
+        /** How the sender wants to appear. Strictly well formed but not yet cleaned for display: see Profile.of. */
+        class ProfileUpdate(val name: String, val avatar: String, val color: Int) : Decoded
+    }
+
+    /** A profile frame: [name] and [avatar] (an emoji, or empty) and a colour number. Null if it cannot fit or is malformed. */
+    fun encodeProfile(name: String, avatar: String, color: Int): ByteArray? {
+        if (color !in 0 until Constants.AVATAR_COLORS) return null
+        if (!isDisplayable(name) || !isDisplayable(avatar)) return null
+        val n = name.toByteArray(Charsets.UTF_8)
+        val a = avatar.toByteArray(Charsets.UTF_8)
+        if (n.size > Constants.PROFILE_NAME_BYTES || a.size > Constants.PROFILE_AVATAR_BYTES) return null
+        val frame = ByteArray(Constants.FRAME_BYTES)
+        frame[0] = TYPE_PROFILE.toByte()
+        frame[1] = (2 + a.size + n.size).toByte()
+        frame[2] = color.toByte()
+        frame[3] = a.size.toByte()
+        a.copyInto(frame, 4)
+        n.copyInto(frame, 4 + a.size)
+        return frame
     }
 
     /**
@@ -95,6 +118,7 @@ object Wire {
         return when (frame[0].toInt()) {
             TYPE_TEXT -> decodeText(frame)?.let { Decoded.Text(it) }
             TYPE_FRAGMENT -> decodeFragment(frame)
+            TYPE_PROFILE -> decodeProfile(frame)
             else -> null
         }
     }
@@ -132,6 +156,31 @@ object Wire {
         return Decoded.Fragment(group, index, count, frame.copyOfRange(2 + Constants.FRAGMENT_HEADER_BYTES, 2 + len))
     }
 
+    private fun decodeProfile(frame: ByteArray): Decoded.ProfileUpdate? {
+        val len = frame[1].toInt() and 0xFF
+        if (len < 2 || len > Constants.MAX_UTF8_BYTES) return null
+        if (!zeroFrom(frame, 2 + len)) return null
+        val color = frame[2].toInt() and 0xFF
+        val avatarLen = frame[3].toInt() and 0xFF
+        val nameLen = len - 2 - avatarLen
+        if (color >= Constants.AVATAR_COLORS) return null
+        if (avatarLen > Constants.PROFILE_AVATAR_BYTES || nameLen < 0 || nameLen > Constants.PROFILE_NAME_BYTES) return null
+        val avatar = strict(frame, 4, avatarLen) ?: return null
+        val name = strict(frame, 4 + avatarLen, nameLen) ?: return null
+        if (!isDisplayable(avatar) || !isDisplayable(name)) return null
+        return Decoded.ProfileUpdate(name, avatar, color)
+    }
+
+    /** Strict UTF-8, empty allowed. */
+    private fun strict(bytes: ByteArray, offset: Int, length: Int): String? = try {
+        Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(bytes, offset, length)).toString()
+    } catch (e: CharacterCodingException) {
+        null
+    }
+
     private fun zeroFrom(frame: ByteArray, from: Int): Boolean {
         for (i in from until frame.size) if (frame[i].toInt() != 0) return false
         return true
@@ -153,7 +202,7 @@ object Wire {
     }
 
     /** No control characters and no bidirectional overrides, which can make text lie about its order. */
-    private fun isDisplayable(text: String): Boolean = text.none { c ->
+    internal fun isDisplayable(text: String): Boolean = text.none { c ->
         Character.isISOControl(c) || c in '\u202A'..'\u202E' || c in '\u2066'..'\u2069' || c == '\u200E' || c == '\u200F'
     }
 

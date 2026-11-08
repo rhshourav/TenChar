@@ -5,7 +5,9 @@ import com.rhshourav.tenchar.crypto.Handshake
 import com.rhshourav.tenchar.crypto.LocalMember
 import com.rhshourav.tenchar.crypto.Ratchet
 import com.rhshourav.tenchar.crypto.Wire
+import com.rhshourav.tenchar.store.AppState
 import com.rhshourav.tenchar.store.Conversation
+import com.rhshourav.tenchar.store.Profile
 import com.rhshourav.tenchar.store.OutboxItem
 import com.rhshourav.tenchar.store.StateCodec
 import com.rhshourav.tenchar.store.StoredMessage
@@ -22,6 +24,9 @@ import java.io.IOException
 
 class StateCodecTest {
     private val rnd = SystemRandom
+
+    private fun enc(vararg c: Conversation) = StateCodec.encode(AppState(c.toMutableList()))
+    private fun dec(b: ByteArray) = StateCodec.decode(b, rnd)
 
     private fun sample(): Pair<Conversation, Ratchet> {
         val a = LocalMember.create(rnd)
@@ -56,7 +61,7 @@ class StateCodecTest {
     @Test
     fun roundTripKeepsEverything() {
         val (conv, peer) = sample()
-        val back = StateCodec.decode(StateCodec.encode(conv), rnd)!!
+        val back = dec(enc(conv)).conversations.single()
         assertEquals(conv.room, back.room)
         assertEquals(conv.memberId, back.memberId)
         assertEquals(conv.memberToken, back.memberToken)
@@ -74,28 +79,28 @@ class StateCodecTest {
 
     @Test
     fun noConversationRoundTrips() {
-        assertNull(StateCodec.decode(StateCodec.encode(null), rnd))
+        assertTrue(StateCodec.decode(StateCodec.encode(AppState()), rnd).conversations.isEmpty())
     }
 
     @Test
     fun damagedDataIsRefused() {
-        val bytes = StateCodec.encode(sample().first)
+        val bytes = enc(sample().first)
         var refused = 0
         for (cut in listOf(0, 3, 5, 20, bytes.size / 2, bytes.size - 1)) {
             try {
-                StateCodec.decode(bytes.copyOf(cut), rnd)
+                dec(bytes.copyOf(cut))
             } catch (e: IOException) {
                 refused++
             }
         }
         assertEquals(6, refused)
         try {
-            StateCodec.decode(bytes + byteArrayOf(1), rnd)
+            dec(bytes + byteArrayOf(1))
             assertTrue("trailing byte accepted", false)
         } catch (e: IOException) {
         }
         try {
-            StateCodec.decode(bytes.copyOf().also { it[0] = 0 }, rnd)
+            dec(bytes.copyOf().also { it[0] = 0 })
             assertTrue("bad magic accepted", false)
         } catch (e: IOException) {
         }
@@ -145,7 +150,7 @@ class StateCodecTest {
         conv.messages.add(StoredMessage(2, "বাংলা", false, Conversation.DELIVERY_NONE))
         conv.messages.add(StoredMessage(3, "ক্ষ".repeat(7), false, Conversation.DELIVERY_NONE)) // 63 bytes
         conv.nextMsgId = 4
-        val back = StateCodec.decode(StateCodec.encode(conv), rnd)!!
+        val back = dec(enc(conv)).conversations.single()
         assertEquals(listOf("😀", "বাংলা", "ক্ষ".repeat(7)), back.messages.map { it.text })
         assertEquals(longest, back.endpoints[1])
         assertEquals(7L, back.lastIds[longest])
@@ -173,22 +178,73 @@ class StateCodecTest {
         // A message over the 2,048-byte limit never reaches the file, and one at the limit does.
         val (conv, _) = sample()
         conv.messages.add(StoredMessage(9, "a".repeat(2049), true, Conversation.DELIVERY_SENT))
-        try { StateCodec.encode(conv); assertTrue("encoded 2049 bytes", false) } catch (e: IOException) {}
+        try { enc(conv); assertTrue("encoded 2049 bytes", false) } catch (e: IOException) {}
         conv.messages.removeAt(conv.messages.lastIndex)
         conv.messages.add(StoredMessage(9, "a".repeat(2048), true, Conversation.DELIVERY_SENT))
-        assertEquals("a".repeat(2048), StateCodec.decode(StateCodec.encode(conv), rnd)!!.messages.last().text)
+        assertEquals("a".repeat(2048), dec(enc(conv)).conversations.single().messages.last().text)
     }
 
     @Test
-    fun onlyVersionThreeIsAccepted() {
-        val bytes = StateCodec.encode(sample().first)
-        assertEquals(3, bytes[4].toInt()) // magic (4 bytes), then the version
-        for (version in listOf(0, 1, 2, 4, 255)) {
+    fun theNewestVersionIsWrittenAndUnknownOnesAreRefused() {
+        val bytes = enc(sample().first)
+        assertEquals(4, bytes[4].toInt()) // magic (4 bytes), then the version
+        // 0 is not a version, and 5 and above are from a newer app than this one.
+        for (version in listOf(0, 5, 6, 255)) {
             try {
-                StateCodec.decode(bytes.copyOf().also { it[4] = version.toByte() }, rnd)
+                dec(bytes.copyOf().also { it[4] = version.toByte() })
                 assertTrue("accepted version $version", false)
             } catch (e: IOException) {}
         }
-        assertNotNull(StateCodec.decode(bytes, rnd))
+        assertNotNull(dec(bytes))
+    }
+
+    // ---- several chats, profiles, notifications -------------------------------------------------------
+
+    @Test
+    fun severalChatsKeepTheirOwnProfilesTopicsAndCounts() {
+        val (one, _) = sample()
+        val (two, _) = sample()
+        one.me = Profile.of("Rafi", "🦊", 3)
+        one.themShared = Profile.of("Nadia", "🌸", 5)
+        one.themLocal = Profile.of("Nadia (work)", "", 1)
+        one.pushUrl = "abcdefghijklmnopqrstuvwxyz012345"
+        one.unread = 7
+        two.me = Profile.of("R", "", 0)
+        val state = AppState(mutableListOf(one, two), Profile.of("Default me", "😀", 2))
+        val back = StateCodec.decode(StateCodec.encode(state), rnd)
+
+        assertEquals(Profile.of("Default me", "😀", 2), back.defaultProfile)
+        assertEquals(2, back.conversations.size)
+        val (a, b) = back.conversations
+        assertEquals(one.localId, a.localId)
+        assertEquals(two.localId, b.localId)
+        assertTrue(a.localId != b.localId)
+        assertEquals(Profile.of("Rafi", "🦊", 3), a.me)
+        assertEquals(Profile.of("Nadia", "🌸", 5), a.themShared)
+        assertEquals(Profile.of("Nadia (work)", "", 1), a.themLocal)
+        assertEquals("Nadia (work)", a.them.name) // your own label wins over what they shared
+        assertEquals("abcdefghijklmnopqrstuvwxyz012345", a.pushUrl)
+        assertEquals(7, a.unread)
+        assertNull(b.themShared); assertNull(b.themLocal); assertNull(b.pushUrl)
+        assertEquals(0, b.unread)
+        assertEquals(Profile.EMPTY, b.them)
+    }
+
+    @Test
+    fun aProfileWithEmojiAndBanglaSurvives() {
+        val (c, _) = sample()
+        c.me = Profile.of("আমি রাফি", "👨‍👩‍👧‍👦", 7) // a family emoji is 25 bytes
+        val back = dec(enc(c)).conversations.single().me
+        assertEquals("আমি রাফি", back.name)
+        assertEquals("👨‍👩‍👧‍👦", back.avatar)
+    }
+
+    @Test
+    fun tooManyChatsOrABadColourAreRefused() {
+        val chats = MutableList(21) { sample().first }
+        try { StateCodec.encode(AppState(chats)); assertTrue("encoded 21 chats", false) } catch (e: IOException) {}
+        val bytes = enc(sample().first)
+        // The default profile's colour byte follows the 5-byte header.
+        try { dec(bytes.copyOf().also { it[5] = 8 }); assertTrue("accepted colour 8", false) } catch (e: IOException) {}
     }
 }

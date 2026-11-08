@@ -42,6 +42,12 @@ object MessageLimits {
         return maxOf(byChars, byBytes).coerceIn(0f, 1f)
     }
 
+    /** The longest prefix of [text] with at most [chars] characters and [bytes] bytes, cut at a grapheme boundary. */
+    fun clampTo(text: String, chars: Int, bytes: Int): String = prefix(text, chars, bytes)
+
+    /** The first user-perceived character of [text], or "" if it is empty. */
+    fun firstGrapheme(text: String): String = prefix(text, 1, Int.MAX_VALUE)
+
     /** The longest prefix of [text] that fits in the composer, cut only at grapheme boundaries. */
     fun clamp(text: String): String = prefix(text, Constants.MAX_DRAFT_CHARS, Constants.MAX_DRAFT_BYTES)
 

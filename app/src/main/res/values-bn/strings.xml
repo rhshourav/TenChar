@@ -62,7 +62,7 @@
     <string name="forget_confirm_yes">মুছুন</string>
 
     <string name="about_title">TenChar সম্পর্কে</string>
-    <string name="about_intro">দুজনের জন্য একটি ব্যক্তিগত মেসেঞ্জার। একটি বার্তায় সর্বোচ্চ ৫০০ অক্ষর যায়; এর চেয়ে লম্বা লেখা কয়েকটি বার্তায় ভাগ হয়ে যায়।</string>
+    <string name="about_intro">একটি ব্যক্তিগত এন্ড-টু-এন্ড এনক্রিপ্টেড মেসেঞ্জার। প্রতিটি চ্যাট দুজনের মধ্যে, আর একটি বার্তায় সর্বোচ্চ ৫০০ অক্ষর যায়; এর চেয়ে লম্বা লেখা কয়েকটি বার্তায় ভাগ হয়ে যায়।</string>
     <string name="about_status">প্রতিটি বার্তা আপনার ফোনেই ডাবল র‍্যাচেট দিয়ে এনক্রিপ্ট হয়, আর রিলে শুধু সাইফারটেক্সট রাখে। কোনো পুশ নোটিফিকেশন নেই: অ্যাপ খোলা থাকলেই বার্তা আসে।</string>
     <string name="about_review">ক্রিপ্টোগ্রাফি স্ট্যান্ডার্ড প্রিমিটিভ (X25519, HKDF, AES-GCM) থেকে হাতে তৈরি। এটি ওপেন সোর্স, কিন্তু স্বাধীনভাবে পর্যালোচিত হয়নি। যেখানে ভুলে কারও বিপদ হতে পারে, সেখানে এর উপর নির্ভর করবেন না।</string>
     <string name="about_not_title">TenChar যা থেকে রক্ষা করবে না</string>
@@ -75,8 +75,7 @@
     <string name="about_not_7">বার্তার দৈর্ঘ্য: লম্বা বার্তায় বেশি এনক্রিপ্টেড অংশ লাগে, তাই রিলে প্রতিটি বার্তা মোটামুটি কত লম্বা তা আন্দাজ করতে পারে।</string>
 
     <string name="keys_reset_title">কী রিসেট হয়েছে</string>
-    <string name="keys_reset_body">আপনার স্ক্রিন লক বা বায়োমেট্রিক পরিবর্তন হয়েছে, তাই এই ফোনের কী নকশা অনুযায়ীই মুছে গেছে। চালিয়ে যেতে আবার যুক্ত করুন।</string>
-    <string name="keys_reset_pair">আবার যুক্ত করুন</string>
+    <string name="keys_reset_body">TenChar আপনার সংরক্ষিত চ্যাট খুলতে পারেনি।</string>
     <string name="auth_title">TenChar আনলক করুন</string>
     <string name="auth_body">আপনার কথোপকথন খুলতে নিশ্চিত করুন যে এটি আপনি।</string>
     <string name="gate_failed">আনলক করা যায়নি। আবার চেষ্টা করুন।</string>
@@ -89,7 +88,7 @@
     <string name="fallback_label">ব্যাকআপ রিলে</string>
     <string name="fallback_detail">মূল রিলে বন্ধ থাকলে ব্যবহার হয়</string>
     <string name="fallback_address">ব্যাকআপ রিলে ঠিকানা</string>
-    <string name="relay_change_note">রিলে বদলালে তা নতুন যুক্তকরণে প্রযোজ্য হবে। চলমান কথোপকথন যে রিলেতে যুক্ত হয়েছিল সেগুলোই ব্যবহার করে।</string>
+    <string name="relay_change_note">এই পরিবর্তন এখন থেকে যুক্ত করা চ্যাটে প্রযোজ্য হবে। প্রতিটি চ্যাট যে রিলেতে যুক্ত হয়েছিল সেগুলোই ব্যবহার করে।</string>
 
     <string name="joining_title">সংযোগ হচ্ছে</string>
     <string name="joining_body">কোড যাচাই করে অন্য ফোন খোঁজা হচ্ছে। রিলে ঘুম থেকে জাগতে প্রথম সংযোগে এক মিনিট পর্যন্ত লাগতে পারে।</string>
@@ -103,4 +102,49 @@
     <string name="chat_split_hint">একটি বার্তার জন্য বেশি লম্বা। এটি %1$dটি বার্তায় ভাগ করে পাঠানো হবে।</string>
     <string name="chat_offline">অফলাইন। রিলেতে পৌঁছানো গেলে বার্তা পাঠানো হবে।</string>
     <string name="chat_gone">রিলেতে আর এই কথোপকথন নেই। আপনাকে হয়তো আবার যুক্ত করতে হবে।</string>
+    <string name="chats_title">চ্যাট</string>
+    <string name="chats_new">নতুন চ্যাট</string>
+    <string name="chat_unnamed">চ্যাট %1$d</string>
+    <string name="chat_unverified">এখনো যাচাই হয়নি</string>
+    <string name="chat_settings_title">চ্যাট সেটিংস</string>
+    <string name="profile_you">আপনি</string>
+    <string name="profile_them">অপর পক্ষ</string>
+    <string name="profile_none">এখনো নাম নেই</string>
+    <string name="profile_title_you">আপনার নাম ও অ্যাভাটার</string>
+    <string name="profile_title_them">আপনি তাদের কীভাবে দেখবেন</string>
+    <string name="profile_name_hint">নাম</string>
+    <string name="profile_avatar">অ্যাভাটার</string>
+    <string name="profile_avatar_hint">অথবা নিজের ইমোজি লিখুন</string>
+    <string name="profile_use_initial">প্রথম অক্ষর ব্যবহার করুন</string>
+    <string name="profile_colour">রং</string>
+    <string name="profile_reset_them">তাদের দেওয়া নামই ব্যবহার করুন</string>
+    <string name="profile_share_note">আপনার নাম ও অ্যাভাটার এন্ড-টু-এন্ড এনক্রিপ্টেড অবস্থায় তাদের কাছে যায়। আপনি তাদের কীভাবে দেখেন তা শুধু এই ফোনেই থাকে।</string>
+    <string name="settings_default_profile">আমার নাম ও অ্যাভাটার</string>
+    <string name="notifications_label">নোটিফিকেশন</string>
+    <string name="notifications_detail">প্রেরক বা লেখা ছাড়া শুধু একটি ছোট “নতুন বার্তা” সতর্কবার্তা</string>
+    <string name="notifications_help_title">সতর্কবার্তা চালু করুন</string>
+    <string name="notifications_help_body">সতর্কবার্তা আসে ntfy অ্যাপ থেকে, গুগল থেকে নয়। ntfy ইনস্টল করে এই ঠিকানায় সাবস্ক্রাইব করুন। ঠিকানাটি গোপন: এটি শুধু এই চ্যাটের।</string>
+    <string name="notifications_copy">ঠিকানা কপি করুন</string>
+    <string name="notifications_open">ntfy-তে খুলুন</string>
+    <string name="notifications_done">হয়েছে</string>
+    <string name="notifications_privacy">পুশ সার্ভিস শুধু জানে যে একটি বার্তা এসেছে এবং কখন; কে পাঠিয়েছে বা কী লেখা ছিল তা কখনো জানে না।</string>
+    <string name="notifications_unsupported">এই রিলে এখনো নোটিফিকেশন সমর্থন করে না। রিলে আপডেট করে আবার চেষ্টা করুন।</string>
+    <string name="notifications_rejected">এই রিলে ওই পুশ সার্ভিস অনুমোদন করে না। রিলে যিনি চালান তাঁকে যোগ করতে বলুন, অথবা সেটিংসে পুশ সার্ভার বদলান।</string>
+    <string name="settings_push_server">পুশ সার্ভার</string>
+    <string name="push_server_title">পুশ সার্ভারের ঠিকানা</string>
+    <string name="push_server_body">এখন থেকে আপনি যে নোটিফিকেশন চালু করবেন তা এই সার্ভিসের মাধ্যমে যাবে। এটি জানে যে একটি বার্তা এসেছে এবং কখন। আপনার রিলেগুলোকে এটি অনুমোদন করতে হবে।</string>
+    <string name="chat_relays">এই চ্যাটের রিলে</string>
+    <string name="relay_for_chat">এই চ্যাটের রিলে</string>
+    <string name="notice_too_many">আপনি ২০টি চ্যাটের সীমায় পৌঁছেছেন। আরেকটি যোগ করতে একটি মুছে ফেলুন।</string>
+    <string name="lost_key_invalidated">অ্যান্ড্রয়েড আপনার চ্যাট সুরক্ষার কী মুছে দিয়েছে। স্ক্রিন লক সরালে বা রিসেট করলে সাধারণত এমন হয়।</string>
+    <string name="lost_key_missing">আপনার চ্যাট সুরক্ষার কী আর এই ফোনে নেই।</string>
+    <string name="lost_vault_damaged">আপনার চ্যাট কী-এর ফাইলটি নষ্ট হয়ে গেছে।</string>
+    <string name="lost_state_unreadable">আপনার চ্যাট এখানে সংরক্ষিত আছে, কিন্তু কোনো সংরক্ষিত কপিই পড়া যায়নি।</string>
+    <string name="keys_reset_kept">কিছুই মুছে ফেলা হয়নি। আবার চেষ্টা করুন, অথবা সব মুছে নতুন করে যুক্ত করুন।</string>
+    <string name="keys_reset_retry">আবার চেষ্টা করুন</string>
+    <string name="keys_reset_erase">সব মুছে নতুন করে শুরু করুন</string>
+    <string name="erase_confirm_title">সব মুছে ফেলবেন?</string>
+    <string name="erase_confirm_body">এই ফোনের সব চ্যাট মুছে যাবে। অন্যদের কাছে তাদের কপি থাকবে। এটি ফেরানো যাবে না।</string>
+    <string name="erase_confirm_yes">মুছুন</string>
+    <string name="about_not_8">নোটিফিকেশন: আপনার বেছে নেওয়া পুশ সার্ভিস ও তার হোস্ট জানতে পারে যে একটি বার্তা এসেছে এবং কখন; কী লেখা ছিল তা কখনো নয়।</string>
 </resources>

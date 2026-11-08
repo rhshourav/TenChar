@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.TextSelectionColors
@@ -71,6 +73,8 @@ fun TenCharScreen(
     scroll: Boolean = true,
     contentArrangement: Arrangement.Vertical = Arrangement.Top,
     contentAlignment: Alignment.Horizontal = Alignment.Start,
+    /** Shown between the back button and the title, for example the other person's avatar. */
+    leading: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
     bottomBar: (@Composable ColumnScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
@@ -91,9 +95,15 @@ fun TenCharScreen(
                     GlassIconButton(TcIcon.ChevronLeft, stringResource(R.string.back), onBack)
                     Spacer(Modifier.width(12.dp))
                 }
+                if (leading != null) {
+                    leading()
+                    Spacer(Modifier.width(12.dp))
+                }
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).semantics { heading() },
                 )
                 actions()
@@ -314,6 +324,50 @@ fun GlassRow(text: String, onClick: () -> Unit, caution: Boolean = false, detail
             }
         }
         TcIconView(TcIcon.ChevronRight, if (caution) Tc.Peach else Tc.InkFaint, Modifier.size(20.dp))
+    }
+}
+
+/**
+ * A round avatar: an emoji (or, if there is none, the first letter of the name) on a soft gradient. The colour
+ * number picks the gradient from [Palette.AVATARS]; the letter is dark because every gradient is light.
+ * Decorative: the name is always next to it, so screen readers skip it.
+ */
+@Composable
+fun Avatar(avatar: String, name: String, color: Int, size: Dp, modifier: Modifier = Modifier) {
+    val (from, to) = Palette.AVATARS[color.coerceIn(0, Palette.AVATARS.size - 1)]
+    val label = avatar.ifEmpty { com.rhshourav.tenchar.MessageLimits.firstGrapheme(name).uppercase().ifEmpty { "?" } }
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(Brush.linearGradient(listOf(Color(from), Color(to))))
+            .clearAndSetSemantics { },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = TextStyle(
+                fontSize = (size.value * 0.46f).sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Tc.Space,
+            ),
+            maxLines = 1,
+        )
+    }
+}
+
+/** A line inside a [GlassCard] that only shows information (no chevron, not tappable). */
+@Composable
+fun GlassInfoRow(text: String, detail: String) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(text = text, style = MaterialTheme.typography.bodyLarge, color = Tc.Ink)
+        Text(text = detail, style = MaterialTheme.typography.labelMedium, color = Tc.InkMuted)
     }
 }
 

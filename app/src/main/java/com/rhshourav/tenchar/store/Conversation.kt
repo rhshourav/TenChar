@@ -1,5 +1,7 @@
 package com.rhshourav.tenchar.store
 
+import com.rhshourav.tenchar.Hex
+import com.rhshourav.tenchar.crypto.RandomSource
 import com.rhshourav.tenchar.crypto.Ratchet
 import com.rhshourav.tenchar.crypto.Reassembler
 
@@ -33,7 +35,22 @@ class Conversation(
     var nextMsgId: Long = 1L,
     /** Pieces of long messages that have arrived but are not yet complete. Saved with the conversation. */
     val reassembler: Reassembler = Reassembler(),
+    /** Names this chat inside the app. Never sent anywhere. */
+    val localId: String = newLocalId(com.rhshourav.tenchar.crypto.SystemRandom),
+    /** How you appear to the other person. Sent to them through the encrypted channel. */
+    var me: Profile = Profile.EMPTY,
+    /** How the other person says they appear. Arrives through the encrypted channel. */
+    var themShared: Profile? = null,
+    /** How you chose to see them on this phone. Overrides [themShared] and is never sent. */
+    var themLocal: Profile? = null,
+    /** The secret address (a long random topic on the push service) that notifications for this chat arrive on, or null when they are off. */
+    var pushUrl: String? = null,
+    /** Messages that arrived while this chat was not open. */
+    var unread: Int = 0,
 ) {
+    /** What to show for the other person: your own choice, else what they shared, else nothing. */
+    val them: Profile get() = themLocal ?: themShared ?: Profile.EMPTY
+
     /** Overwrites key material. Strings (the member token) cannot be overwritten on the JVM. */
     fun wipe() {
         ratchet.wipe()
@@ -42,6 +59,9 @@ class Conversation(
     }
 
     companion object {
+        fun newLocalId(random: RandomSource): String = Hex.encode(ByteArray(8).also(random::nextBytes))
+
+        const val MAX_PUSH_URL_BYTES = 128
         const val DELIVERY_NONE = 0
         const val DELIVERY_QUEUED = 1
         const val DELIVERY_SENT = 2

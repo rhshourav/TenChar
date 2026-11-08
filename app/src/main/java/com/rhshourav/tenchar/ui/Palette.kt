@@ -41,6 +41,21 @@ object Palette {
     const val BUBBLE_MINE_LAVENDER = 0.22f
     const val BUBBLE_THEIRS = 0.07f
 
+    /**
+     * Avatar backgrounds, by colour number: pairs of light colours so the dark letter on top stays readable
+     * (ContrastTest checks the dark text against both ends of every pair).
+     */
+    val AVATARS: List<Pair<Long, Long>> = listOf(
+        MINT to LAVENDER,
+        PEACH to LAVENDER,
+        MINT to LAVENDER_SOFT,
+        PEACH to MINT,
+        LAVENDER_SOFT to PEACH,
+        LAVENDER to PEACH_TEXT,
+        MINT to PEACH_TEXT,
+        LAVENDER_SOFT to MINT,
+    )
+
     // The aurora: five soft glows at the peak alpha shown, fading to nothing at their radius.
     const val GLOW_PLUM = 1.0f
     const val GLOW_INDIGO = 0.55f

@@ -84,6 +84,13 @@ class RelayClient(base: String) {
     suspend fun ack(room: String, token: String, upTo: Long): Reply<Unit> =
         call("POST", room, "/ack", token, JSONObject().put("upTo", upTo).toString()) { }
 
+    /**
+     * Registers the address that gets a content-free wake-up when a message arrives for this phone, or removes it
+     * when [url] is empty. A relay that predates push answers 404 or 501.
+     */
+    suspend fun registerPush(room: String, token: String, url: String): Reply<Boolean> =
+        call("POST", room, "/push", token, JSONObject().put("url", url).toString()) { it.optBoolean("push", false) }
+
     suspend fun delete(room: String, token: String): Reply<Unit> = call("DELETE", room, "", token, null) { }
 
     private suspend fun <T : Any> call(

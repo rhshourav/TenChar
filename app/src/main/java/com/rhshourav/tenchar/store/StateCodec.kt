@@ -3,7 +3,9 @@ package com.rhshourav.tenchar.store
 import com.rhshourav.tenchar.Constants
 import com.rhshourav.tenchar.Hex
 import com.rhshourav.tenchar.RelayAddress
+import com.rhshourav.tenchar.crypto.RandomSource
 import com.rhshourav.tenchar.crypto.Ratchet
+import com.rhshourav.tenchar.crypto.Reassembler
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
@@ -14,24 +16,29 @@ import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
-import com.rhshourav.tenchar.crypto.RandomSource
-import com.rhshourav.tenchar.crypto.Reassembler
 
 /**
- * The plaintext that [Vault] encrypts. A plain binary format, written and read
- * with hard limits, so a damaged file fails cleanly instead of eating memory.
+ * The plaintext that [Vault] encrypts. A plain binary format, written and read with hard limits, so a
+ * damaged file fails cleanly instead of eating memory.
  *
- * Strings are a big-endian u16 byte count followed by standard UTF-8 (see [writeStr]). They are
- * deliberately not DataOutputStream.writeUTF, which is Java's modified UTF-8 (U+0000 as C0 80 and
- * emoji as two 3-byte surrogates), a quirk no other implementation would reproduce.
+ * Strings are a big-endian u16 byte count followed by standard UTF-8 (see [writeStr]). Version 1 used
+ * DataOutputStream.writeUTF, which is Java's modified UTF-8 (U+0000 as C0 80, emoji as two 3-byte surrogates);
+ * it is still read, never written.
  *
- * Version 3 (messages up to 2,048 bytes; pieces of long messages in progress). Versions 1 and 2 were
- * development formats that were never released, so there is no migration: any other version is refused,
- * which sends the person to the "Keys were reset" screen.
+ * Versions
+ *   1  one chat; strings with writeUTF
+ *   2  one chat; standard UTF-8
+ *   3  one chat; messages up to 2,048 bytes; pieces of long messages in progress
+ *   4  up to 20 chats, each with its own profiles, notification topic and unread count; a default profile
+ *
+ * **Every version is read.** Changing the format must never be the reason someone's chats disappear: a file
+ * from any earlier version opens and is saved back as version 4. Only a file that is genuinely damaged, or from
+ * a newer app than this one, is refused (and even then nothing is deleted: see Vault).
  */
 object StateCodec {
     private const val MAGIC = 0x54435331 // "TCS1"
-    private const val VERSION = 3
+    const val VERSION = 4
+    private const val OLDEST = 1
     private const val MAX_OUTBOX = 2000
     private const val MAX_RATCHET_BYTES = 64 * 1024
 
@@ -71,113 +78,171 @@ object StateCodec {
         }
     }
 
-    fun encode(conversation: Conversation?): ByteArray {
+    /** Version 1 strings are Java's modified UTF-8. Read with the same size limit. */
+    private fun readLegacyStr(input: DataInputStream, maxBytes: Int): String {
+        val s = input.readUTF()
+        if (s.toByteArray(Charsets.UTF_8).size > maxBytes) throw IOException("string over the limit of $maxBytes")
+        return s
+    }
+
+    private fun str(input: DataInputStream, version: Int, maxBytes: Int): String =
+        if (version == 1) readLegacyStr(input, maxBytes) else readStr(input, maxBytes)
+
+    // ---- writing (always the newest version) ------------------------------------------------------------
+
+    fun encode(state: AppState): ByteArray {
+        if (state.conversations.size > AppState.MAX_CHATS) throw IOException("too many chats")
         val bytes = ByteArrayOutputStream()
         val out = DataOutputStream(bytes)
         out.writeInt(MAGIC)
         out.writeByte(VERSION)
-        out.writeBoolean(conversation != null)
-        if (conversation != null) {
-            out.write(Hex.decode(conversation.room))
-            out.write(Hex.decode(conversation.memberId))
-            out.write(Hex.decode(conversation.memberToken))
-            out.writeByte(conversation.endpoints.size)
-            for (e in conversation.endpoints) writeStr(out, e, MAX_URL_BYTES)
-            out.writeBoolean(conversation.verified)
-            writeStr(out, conversation.verification, VERIFICATION_BYTES)
-            val ratchet = conversation.ratchet.serialize()
-            out.writeInt(ratchet.size)
-            out.write(ratchet)
-            ratchet.fill(0)
-            out.writeInt(conversation.lastIds.size)
-            for ((k, v) in conversation.lastIds) {
-                writeStr(out, k, MAX_URL_BYTES)
-                out.writeLong(v)
-            }
-            out.writeInt(conversation.outbox.size)
-            for (item in conversation.outbox) {
-                out.writeLong(item.msgId)
-                out.write(item.envelope)
-            }
-            out.writeInt(conversation.messages.size)
-            for (m in conversation.messages) {
-                out.writeLong(m.id)
-                writeStr(out, m.text, Constants.MAX_MESSAGE_BYTES)
-                out.writeBoolean(m.mine)
-                out.writeByte(m.delivery)
-            }
-            out.writeLong(conversation.nextMsgId)
-            val pending = conversation.reassembler.pending
-            out.writeByte(pending.size)
-            for (g in pending) {
-                out.writeShort(g.id)
-                out.writeByte(g.count)
-                for (part in g.parts) {
-                    out.writeBoolean(part != null)
-                    if (part != null) {
-                        out.writeByte(part.size)
-                        out.write(part)
-                    }
-                }
-            }
-        }
+        writeProfile(out, state.defaultProfile)
+        out.writeByte(state.conversations.size)
+        for (c in state.conversations) writeConversation(out, c)
         out.flush()
         return bytes.toByteArray()
     }
 
-    /** Null means "no conversation yet". Throws IOException for anything malformed. */
-    fun decode(data: ByteArray, random: RandomSource): Conversation? {
+    private fun writeProfile(out: DataOutputStream, p: Profile) {
+        out.writeByte(p.color)
+        writeStr(out, p.name, Profile.MAX_NAME_BYTES)
+        writeStr(out, p.avatar, Profile.MAX_AVATAR_BYTES)
+    }
+
+    private fun writeConversation(out: DataOutputStream, c: Conversation) {
+        out.write(Hex.decode(c.room))
+        out.write(Hex.decode(c.memberId))
+        out.write(Hex.decode(c.memberToken))
+        out.writeByte(c.endpoints.size)
+        for (e in c.endpoints) writeStr(out, e, MAX_URL_BYTES)
+        out.writeBoolean(c.verified)
+        writeStr(out, c.verification, VERIFICATION_BYTES)
+        val ratchet = c.ratchet.serialize()
+        out.writeInt(ratchet.size)
+        out.write(ratchet)
+        ratchet.fill(0)
+        out.writeInt(c.lastIds.size)
+        for ((k, v) in c.lastIds) {
+            writeStr(out, k, MAX_URL_BYTES)
+            out.writeLong(v)
+        }
+        out.writeInt(c.outbox.size)
+        for (item in c.outbox) {
+            out.writeLong(item.msgId)
+            out.write(item.envelope)
+        }
+        out.writeInt(c.messages.size)
+        for (m in c.messages) {
+            out.writeLong(m.id)
+            writeStr(out, m.text, Constants.MAX_MESSAGE_BYTES)
+            out.writeBoolean(m.mine)
+            out.writeByte(m.delivery)
+        }
+        out.writeLong(c.nextMsgId)
+        val pending = c.reassembler.pending
+        out.writeByte(pending.size)
+        for (g in pending) {
+            out.writeShort(g.id)
+            out.writeByte(g.count)
+            for (part in g.parts) {
+                out.writeBoolean(part != null)
+                if (part != null) {
+                    out.writeByte(part.size)
+                    out.write(part)
+                }
+            }
+        }
+        // Added in version 4.
+        out.write(Hex.decode(c.localId))
+        writeProfile(out, c.me)
+        out.writeBoolean(c.themShared != null)
+        c.themShared?.let { writeProfile(out, it) }
+        out.writeBoolean(c.themLocal != null)
+        c.themLocal?.let { writeProfile(out, it) }
+        out.writeBoolean(c.pushUrl != null)
+        c.pushUrl?.let { writeStr(out, it, Conversation.MAX_PUSH_URL_BYTES) }
+        out.writeShort(c.unread.coerceIn(0, 0xFFFF))
+    }
+
+    // ---- reading (every version) ------------------------------------------------------------------------
+
+    /** Throws [IOException] for anything malformed or from a version this app does not know. Never returns partial data. */
+    fun decode(data: ByteArray, random: RandomSource): AppState {
         try {
             val input = DataInputStream(ByteArrayInputStream(data))
             if (input.readInt() != MAGIC) throw IOException("not a TenChar state file")
-            if (input.readUnsignedByte() != VERSION) throw IOException("unknown state version")
-            if (!input.readBoolean()) {
-                if (input.available() != 0) throw IOException("trailing bytes")
-                return null
-            }
-            val room = Hex.encode(ByteArray(16).also(input::readFully))
-            val memberId = Hex.encode(ByteArray(16).also(input::readFully))
-            val token = Hex.encode(ByteArray(32).also(input::readFully))
-            val endpointCount = input.readUnsignedByte()
-            if (endpointCount !in 1..Conversation.MAX_ENDPOINTS) throw IOException("bad endpoint count")
-            val endpoints = List(endpointCount) { readStr(input, MAX_URL_BYTES) }
-            val verified = input.readBoolean()
-            val verification = readStr(input, VERIFICATION_BYTES)
-            if (verification.length != VERIFICATION_BYTES || !Regex("""\d{4} \d{4}""").matches(verification)) {
-                throw IOException("bad verification number")
-            }
-            val ratchetSize = input.readInt()
-            if (ratchetSize !in 1..MAX_RATCHET_BYTES) throw IOException("bad ratchet size")
-            val ratchetBytes = ByteArray(ratchetSize).also(input::readFully)
-            val ratchet = Ratchet.deserialize(ratchetBytes, random)
-            ratchetBytes.fill(0)
+            val version = input.readUnsignedByte()
+            if (version < OLDEST || version > VERSION) throw IOException("state version $version is not known to this app")
 
-            val idCount = input.readInt()
-            if (idCount !in 0..Conversation.MAX_ENDPOINTS) throw IOException("bad id count")
-            val lastIds = LinkedHashMap<String, Long>()
-            repeat(idCount) { lastIds[readStr(input, MAX_URL_BYTES)] = input.readLong() }
-
-            val outboxCount = input.readInt()
-            if (outboxCount !in 0..MAX_OUTBOX) throw IOException("bad outbox count")
-            val outbox = ArrayList<OutboxItem>(outboxCount)
-            repeat(outboxCount) {
-                val id = input.readLong()
-                outbox.add(OutboxItem(id, ByteArray(Constants.ENVELOPE_BYTES).also(input::readFully)))
+            val state = AppState()
+            if (version >= 4) {
+                state.defaultProfile = readProfile(input)
+                val count = input.readUnsignedByte()
+                if (count > AppState.MAX_CHATS) throw IOException("bad chat count")
+                repeat(count) { state.conversations += readConversation(input, version, random) }
+            } else {
+                // Versions 1 to 3 held at most one chat.
+                if (input.readBoolean()) state.conversations += readConversation(input, version, random)
             }
+            if (input.available() != 0) throw IOException("trailing bytes")
+            return state
+        } catch (e: EOFException) {
+            throw IOException("truncated state", e)
+        }
+    }
 
-            val messageCount = input.readInt()
-            if (messageCount !in 0..Conversation.MAX_MESSAGES) throw IOException("bad message count")
-            val messages = ArrayList<StoredMessage>(messageCount)
-            repeat(messageCount) {
-                val id = input.readLong()
-                val text = readStr(input, Constants.MAX_MESSAGE_BYTES)
-                val mine = input.readBoolean()
-                val delivery = input.readUnsignedByte()
-                if (delivery > Conversation.DELIVERY_SENT) throw IOException("bad delivery state")
-                messages.add(StoredMessage(id, text, mine, delivery))
-            }
-            val nextId = input.readLong()
-            val groups = ArrayList<Reassembler.Group>()
+    private fun readProfile(input: DataInputStream): Profile {
+        val color = input.readUnsignedByte()
+        if (color >= Profile.COLORS) throw IOException("bad colour")
+        return Profile(readStr(input, Profile.MAX_NAME_BYTES), readStr(input, Profile.MAX_AVATAR_BYTES), color)
+    }
+
+    private fun readConversation(input: DataInputStream, version: Int, random: RandomSource): Conversation {
+        val room = Hex.encode(ByteArray(16).also(input::readFully))
+        val memberId = Hex.encode(ByteArray(16).also(input::readFully))
+        val token = Hex.encode(ByteArray(32).also(input::readFully))
+        val endpointCount = input.readUnsignedByte()
+        if (endpointCount !in 1..Conversation.MAX_ENDPOINTS) throw IOException("bad endpoint count")
+        val endpoints = List(endpointCount) { str(input, version, MAX_URL_BYTES) }
+        val verified = input.readBoolean()
+        val verification = str(input, version, VERIFICATION_BYTES)
+        if (verification.length != VERIFICATION_BYTES || !Regex("""\d{4} \d{4}""").matches(verification)) {
+            throw IOException("bad verification number")
+        }
+        val ratchetSize = input.readInt()
+        if (ratchetSize !in 1..MAX_RATCHET_BYTES) throw IOException("bad ratchet size")
+        val ratchetBytes = ByteArray(ratchetSize).also(input::readFully)
+        val ratchet = Ratchet.deserialize(ratchetBytes, random)
+        ratchetBytes.fill(0)
+
+        val idCount = input.readInt()
+        if (idCount !in 0..Conversation.MAX_ENDPOINTS) throw IOException("bad id count")
+        val lastIds = LinkedHashMap<String, Long>()
+        repeat(idCount) { lastIds[str(input, version, MAX_URL_BYTES)] = input.readLong() }
+
+        val outboxCount = input.readInt()
+        if (outboxCount !in 0..MAX_OUTBOX) throw IOException("bad outbox count")
+        val outbox = ArrayList<OutboxItem>(outboxCount)
+        repeat(outboxCount) {
+            val id = input.readLong()
+            outbox.add(OutboxItem(id, ByteArray(Constants.ENVELOPE_BYTES).also(input::readFully)))
+        }
+
+        val messageCount = input.readInt()
+        if (messageCount !in 0..Conversation.MAX_MESSAGES) throw IOException("bad message count")
+        val messages = ArrayList<StoredMessage>(messageCount)
+        repeat(messageCount) {
+            val id = input.readLong()
+            val text = str(input, version, Constants.MAX_MESSAGE_BYTES)
+            val mine = input.readBoolean()
+            val delivery = input.readUnsignedByte()
+            if (delivery > Conversation.DELIVERY_SENT) throw IOException("bad delivery state")
+            messages.add(StoredMessage(id, text, mine, delivery))
+        }
+        val nextId = input.readLong()
+
+        val groups = ArrayList<Reassembler.Group>()
+        if (version >= 3) {
             val pendingCount = input.readUnsignedByte()
             if (pendingCount > Constants.MAX_PENDING_MESSAGES) throw IOException("bad pending count")
             repeat(pendingCount) {
@@ -194,12 +259,30 @@ object StateCodec {
                 }
                 groups += Reassembler.Group(id, count, parts)
             }
-            if (input.available() != 0) throw IOException("trailing bytes")
-            val conversation = Conversation(room, memberId, token, endpoints, ratchet, verification, verified, lastIds, outbox, messages, nextId)
-            conversation.reassembler.restore(groups)
-            return conversation
-        } catch (e: EOFException) {
-            throw IOException("truncated state", e)
         }
+
+        var localId = Conversation.newLocalId(random)
+        var me = Profile.EMPTY
+        var shared: Profile? = null
+        var local: Profile? = null
+        var topic: String? = null
+        var unread = 0
+        if (version >= 4) {
+            localId = Hex.encode(ByteArray(8).also(input::readFully))
+            me = readProfile(input)
+            if (input.readBoolean()) shared = readProfile(input)
+            if (input.readBoolean()) local = readProfile(input)
+            if (input.readBoolean()) topic = readStr(input, Conversation.MAX_PUSH_URL_BYTES)
+            unread = input.readUnsignedShort()
+        }
+
+        val conversation = Conversation(
+            room = room, memberId = memberId, memberToken = token, endpoints = endpoints, ratchet = ratchet,
+            verification = verification, verified = verified, lastIds = lastIds, outbox = outbox, messages = messages,
+            nextMsgId = nextId, localId = localId, me = me, themShared = shared, themLocal = local, pushUrl = topic,
+            unread = unread,
+        )
+        conversation.reassembler.restore(groups)
+        return conversation
     }
 }
