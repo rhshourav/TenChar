@@ -27,7 +27,7 @@ nav .w{display:flex;align-items:center;gap:28px;height:64px}
 .brand svg{width:38px;height:32px}
 nav a:not(.brand){color:var(--muted);text-decoration:none;font-size:15px}nav a:not(.brand):hover{color:#fff}
 .btn{display:inline-flex;align-items:center;gap:8px;padding:13px 22px;border-radius:14px;font-weight:700;font-size:16px;text-decoration:none;border:1px solid var(--edge);background:var(--glass);color:var(--ink);transition:transform .15s,background .15s}
-.btn:hover{transform:translateY(-2px);background:rgba(255,255,255,.13);color:#fff}
+.btn:hover{background:rgba(255,255,255,.13);color:#fff}
 .btn.p{background:linear-gradient(135deg,var(--mint),var(--lav));color:#13141C;border:0}.btn.p:hover{color:#13141C;background:linear-gradient(135deg,#a2ffd0,#c9adff)}
 nav .btn{padding:8px 16px;font-size:14px;color:#13141C}
 .plate{background:linear-gradient(rgba(19,20,28,.45),rgba(19,20,28,.45)),var(--glass);border:1px solid var(--edge);border-radius:24px;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
@@ -37,24 +37,47 @@ h1{font-size:clamp(44px,6.4vw,84px);line-height:1;font-weight:800;letter-spacing
 .cta{display:flex;flex-wrap:wrap;gap:12px}
 .fine{margin-top:22px;font-size:15px;color:var(--muted);max-width:34em}
 .fine b{color:var(--peachT);font-weight:500}
-.phone{padding:18px;max-width:380px;margin-left:auto;width:100%;box-shadow:0 40px 90px -30px rgba(90,51,211,.7)}
-.ph{display:flex;align-items:center;gap:12px;padding-bottom:14px;border-bottom:1px solid var(--edge)}
-.av{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--peach),var(--indigo));display:grid;place-items:center;font-weight:800;color:#fff}
-.ph small{display:block;color:var(--mint);font-size:13px;line-height:1.2}
-.ph strong{line-height:1.2}
-#log{height:230px;overflow:auto;padding:16px 2px;display:flex;flex-direction:column;gap:8px;scrollbar-width:thin}
-.b{max-width:80%;padding:9px 14px;border-radius:18px;font-size:17px;word-break:break-word;animation:pop .25s ease-out}
-@keyframes pop{from{transform:scale(.9);opacity:0}}
-.b.me{align-self:flex-end;background:linear-gradient(135deg,#6a3fe0,var(--indigo));border-bottom-right-radius:6px}
-.b.th{align-self:flex-start;background:rgba(255,255,255,.12);border:1px solid var(--edge);border-bottom-left-radius:6px}
-form{display:flex;gap:8px;align-items:center}
-.in{flex:1;display:flex;align-items:center;background:rgba(0,0,0,.3);border:1px solid var(--edge);border-radius:14px;padding:0 12px}
-input{flex:1;min-width:0;background:none;border:0;color:var(--ink);font:inherit;padding:11px 0;outline:0}
-.in:focus-within{border-color:var(--mint)}
-#cnt{font:13px "JetBrains Mono",monospace;color:var(--muted)}
-form button{border:0;border-radius:14px;width:46px;height:46px;background:linear-gradient(135deg,var(--mint),var(--lav));color:#13141C;font-size:20px;font-weight:800;cursor:pointer}
-.wire{margin-top:14px;font-size:13px;color:var(--muted)}
-#wire{display:block;margin-top:6px;font:11px/1.45 "JetBrains Mono",monospace;color:var(--lav2);word-break:break-all;opacity:.85}
+.dev{width:100%;max-width:340px;margin-left:auto;animation:fadeup .7s cubic-bezier(.2,.7,.2,1) both}
+@keyframes fadeup{from{opacity:0;transform:translateY(10px)}}
+.frame{padding:9px;border-radius:46px;background:linear-gradient(160deg,#2b2b38,#0d0e14 45%,#1b1b25);box-shadow:0 0 0 1px rgba(255,255,255,.14),0 50px 90px -30px rgba(0,0,0,.8),0 24px 70px -24px rgba(90,51,211,.45)}
+.screen{position:relative;height:clamp(520px,78vh,620px);border-radius:38px;overflow:hidden;display:flex;flex-direction:column;background:radial-gradient(120% 55% at 90% 0,rgba(90,51,211,.35),transparent 60%),radial-gradient(90% 45% at 0 100%,rgba(132,245,183,.09),transparent 60%),#14151e}
+.isl{position:absolute;top:10px;left:50%;width:92px;height:26px;margin-left:-46px;border-radius:99px;background:#000}
+.sb{display:flex;justify-content:space-between;align-items:center;height:46px;padding:12px 28px 0;font-size:13px;font-weight:600}
+.bat{width:24px;height:12px;border:1.5px solid rgba(255,255,255,.6);border-radius:4px;position:relative}.bat::after{content:"";position:absolute;inset:1.5px 5px 1.5px 1.5px;border-radius:2px;background:var(--ink)}
+.bar{display:flex;align-items:center;gap:10px;padding:8px 14px 12px;border-bottom:1px solid rgba(255,255,255,.08)}
+.bk{width:22px;height:22px;color:var(--muted)}
+.av{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:700;color:#13141C;background:linear-gradient(135deg,var(--peach),var(--lav))}
+.bar b{display:block;font-size:16px;line-height:1.2}
+.bar small{display:flex;align-items:center;gap:5px;font-size:12px;line-height:1.2;color:var(--mint)}.bar small svg{width:13px;height:13px}
+.msgs{flex:1;min-height:0;display:flex;flex-direction:column;gap:4px;padding:10px 14px;overflow-y:auto;scrollbar-width:none}.msgs::-webkit-scrollbar{display:none}
+.day{margin:auto 0 8px;align-self:center;font-size:12px;color:var(--muted)}
+.m{max-width:78%;padding:8px 12px 6px;border-radius:18px;font-size:16px;line-height:1.35;word-break:break-word;animation:msg .28s cubic-bezier(.2,.7,.2,1) both}
+.m time{display:block;margin-top:2px;font-size:10.5px;text-align:right;opacity:.75}
+.m.me{align-self:flex-end;background:var(--indigo);border-bottom-right-radius:6px}
+.m.th{align-self:flex-start;background:rgba(255,255,255,.1);border-bottom-left-radius:6px}
+@keyframes msg{from{opacity:0;transform:translateY(8px)}}
+.st{align-self:flex-end;min-height:15px;margin:0 4px 6px;font-size:11px;color:var(--muted)}
+.m.ty{display:flex;gap:5px;padding:13px 14px;width:fit-content}.ty i{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:ty 1.2s infinite}
+.ty i:nth-child(2){animation-delay:.15s}.ty i:nth-child(3){animation-delay:.3s}@keyframes ty{0%,60%,100%{opacity:.3}30%{opacity:1}}
+.comp{display:flex;align-items:center;gap:8px;padding:10px 14px 6px}
+.field{flex:1;min-width:0;display:flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;border-radius:22px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);transition:border-color .2s}
+.field:focus-within{border-color:var(--lav)}
+.field input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--ink);font:inherit;font-size:16px}.field input::placeholder{color:var(--muted)}
+.cn{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;transition:color .2s}.cn.full{color:var(--peachT)}
+.snd{flex:none;width:44px;height:44px;border:0;border-radius:50%;display:grid;place-items:center;background:var(--mint);color:#13141C;cursor:pointer;transition:opacity .2s}.snd:disabled{opacity:.3;cursor:default}
+.hi{width:110px;height:4px;margin:8px auto;border-radius:4px;background:rgba(255,255,255,.3)}
+.relay{margin-top:16px;font-size:13px;color:var(--muted)}.rh{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.rp{padding:0;border:0;background:none;color:var(--lav2);font:inherit;font-size:13px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}.rp:hover{color:#fff}
+#wire{display:block;margin-top:6px;font:12px "JetBrains Mono",monospace;color:var(--lav2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:opacity .16s}
+.gh{position:relative}.gh summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--muted);font-size:15px}.gh summary::-webkit-details-marker{display:none}.gh summary:hover{color:#fff}
+.gi{width:18px;height:18px;fill:currentColor}
+.menu{position:absolute;right:0;top:calc(100% + 16px);min-width:250px;display:grid;padding:8px;border-radius:16px;background:rgba(24,22,44,.97);border:1px solid var(--edge);box-shadow:0 20px 50px -10px rgba(0,0,0,.6)}
+nav .menu a{padding:10px 12px;border-radius:10px;color:var(--ink);font-size:15px}nav .menu a:hover{background:rgba(255,255,255,.1)}
+.three{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.three .plate{padding:26px;display:flex;flex-direction:column;gap:10px;align-items:flex-start;text-decoration:none;color:var(--ink);transition:transform .2s,border-color .2s}
+.three .plate:hover{border-color:var(--lav);color:var(--ink)}.three p{color:var(--muted);font-size:16px;flex:1}.three .gi{width:30px;height:30px}.three span{color:var(--lav2);font-weight:700;font-size:15px;word-break:break-all}
+.lg{height:32px;width:auto;display:block}footer .lg{height:26px;display:inline;vertical-align:middle;margin-right:8px}
+@media(max-width:860px){.three{grid-template-columns:1fr}}
 .stats{display:flex;flex-wrap:wrap;gap:12px 48px;padding:26px 0;border-top:1px solid var(--edge);border-bottom:1px solid var(--edge);margin-bottom:24px}
 .stats div{font-size:15px;color:var(--muted)}.stats b{display:block;font-size:30px;line-height:1.1;color:var(--ink);font-weight:800}
 section{padding:80px 0}
@@ -89,7 +112,7 @@ ul.l li::before{content:"";position:absolute;left:0;top:.55em;width:10px;height:
 footer{border-top:1px solid var(--edge);padding:36px 0 56px;color:var(--muted);font-size:15px}
 footer .w{display:flex;flex-wrap:wrap;gap:16px 40px;align-items:center;justify-content:space-between}
 footer svg{width:30px;height:26px;vertical-align:middle;margin-right:8px}
-@media(max-width:860px){.hero{grid-template-columns:1fr;gap:40px;padding-top:40px}.phone{margin:0 auto}.steps{grid-template-columns:1fr 1fr}.rows>div,.two,.dl{grid-template-columns:1fr}nav a.hide{display:none}.road .plate{grid-template-columns:1fr}.road p{grid-column:1}}
+@media(max-width:860px){.hero{grid-template-columns:1fr;gap:40px;padding-top:40px}.dev{margin:0 auto}.steps{grid-template-columns:1fr 1fr}.rows>div,.two,.dl{grid-template-columns:1fr}nav a.hide{display:none}.road .plate{grid-template-columns:1fr}.road p{grid-column:1}}
 @media(max-width:520px){.steps{grid-template-columns:1fr}nav .w{gap:16px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 </style>
@@ -100,11 +123,12 @@ footer svg{width:30px;height:26px;vertical-align:middle;margin-right:8px}
 <linearGradient id="gt" gradientUnits="userSpaceOnUse" x1="6" y1="14" x2="36" y2="52"><stop offset="0" stop-color="#84F5B7"/><stop offset="1" stop-color="#B491FE"/></linearGradient>
 <linearGradient id="gc" gradientUnits="userSpaceOnUse" x1="60" y1="17" x2="52" y2="47"><stop offset="0" stop-color="#FFB385"/><stop offset="1" stop-color="#5A33D3"/></linearGradient>
 <symbol id="logo" viewBox="0 0 76 64"><path d="M10 18h24M22 18v30" stroke="url(#gt)" stroke-width="9" stroke-linecap="round" fill="none"/><path d="M66 22a15 15 0 1 0 0 20" stroke="url(#gc)" stroke-width="9" stroke-linecap="round" fill="none"/></symbol>
-</defs></svg>
+<symbol id="gh" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></symbol></defs></svg>
 
 <nav><div class="w">
 <a class="brand" href="#top" aria-label="TenChar home"><svg role="img" aria-label="TenChar logo"><use href="#logo"/></svg>TenChar</a>
 <a class="hide" href="#how">How it works</a><a class="hide" href="#security">Security</a><a class="hide" href="#roadmap">Roadmap</a>
+<details class="gh"><summary><svg class="gi" aria-hidden="true"><use href="#gh"/></svg>GitHub</summary><div class="menu"><a href="https://github.com/rhshourav/TenChar">TenChar for Android</a><a href="https://github.com/rhshourav/TenChar-Desktop">TenChar Desktop</a><a href="https://github.com/rhshourav">rhshourav, the author</a></div></details>
 <a class="btn p" href="#get">Get it</a>
 </div></nav>
 
@@ -120,18 +144,23 @@ footer svg{width:30px;height:26px;vertical-align:middle;margin-right:8px}
     <p class="fine">Open source under AGPL-3.0. <b>Not yet independently audited</b>, so don’t rely on it where a flaw could cause harm.</p>
   </div>
 
-  <div class="plate phone" aria-label="Interactive demo">
-    <div class="ph"><div class="av" aria-hidden="true">R</div><div><strong>Rafi</strong><small>Verified · 8-digit number matched</small></div></div>
-    <div id="log" role="log" aria-live="polite">
-      <div class="b th">hey, free?</div>
-      <div class="b me">yes! 5 min</div>
-    </div>
-    <form id="f" autocomplete="off">
-      <label class="in"><span class="sr" style="position:absolute;left:-9999px">Message, up to ten characters</span>
-        <input id="msg" placeholder="Try it: 10 max" enterkeyhint="send" lang="bn"><span id="cnt">0/10</span></label>
-      <button type="submit" aria-label="Send">↑</button>
-    </form>
-    <p class="wire">What a relay would see for each message: 135 bytes, always. This is random data for show; the demo does no real encryption.<code id="wire"></code></p>
+  <div class="dev" id="dev" aria-label="Interactive demo">
+    <div class="frame"><div class="screen">
+      <i class="isl"></i>
+      <div class="sb"><span id="clk">9:41</span><span class="bat" aria-hidden="true"></span></div>
+      <div class="bar">
+        <svg class="bk" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div class="av" aria-hidden="true">R</div>
+        <div><b>Kamran</b><small><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Verified</small></div>
+      </div>
+      <div class="msgs" id="msgs" role="log" aria-live="polite"><div class="day">Today</div></div>
+      <form class="comp" id="f" autocomplete="off">
+        <label class="field"><input id="msg" aria-label="Message, up to ten characters" placeholder="Try Bangla or emoji" enterkeyhint="send" lang="bn"><span class="cn" id="cn">0/10</span></label>
+        <button class="snd" id="snd" type="submit" aria-label="Send" disabled><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </form>
+      <div class="hi"></div>
+    </div></div>
+    <div class="relay"><div class="rh"><span>What a relay would see (random bytes for show)</span><button class="rp" id="rp" type="button">Replay</button></div><code id="wire"></code></div>
   </div>
 </div>
 
@@ -207,25 +236,56 @@ footer svg{width:30px;height:26px;vertical-align:middle;margin-right:8px}
   </div>
   <p class="fine">Read the protocol and relay API in the <code>docs</code> folder of the Android repository, or run your own relay from its <code>relay</code> folder.</p>
 </section>
+<section id="code">
+  <h2>The code, and who writes it</h2>
+  <p class="sub">Everything is open. Read it, build it, report a problem.</p>
+  <div class="three">
+    <a class="plate" href="https://github.com/rhshourav/TenChar"><svg class="gi" aria-hidden="true"><use href="#gh"/></svg><h3>TenChar for Android</h3><p>The app, the relay and the protocol documents.</p><span>github.com/rhshourav/TenChar</span></a>
+    <a class="plate" href="https://github.com/rhshourav/TenChar-Desktop"><svg class="gi" aria-hidden="true"><use href="#gh"/></svg><h3>TenChar Desktop</h3><p>The C++ and Qt 6 client, with its tests and Windows build scripts.</p><span>github.com/rhshourav/TenChar-Desktop</span></a>
+    <a class="plate" href="https://github.com/rhshourav"><svg class="gi" aria-hidden="true"><use href="#gh"/></svg><h3>rhshourav</h3><p>MD Shourav Hossain, the author. Follow for updates.</p><span>github.com/rhshourav</span></a>
+  </div>
+</section>
 </main>
 
 <footer><div class="w">
-  <div><svg role="img" aria-label="TenChar logo"><use href="#logo"/></svg>TenChar · © 2026 MD Shourav Hossain (rhshourav)</div>
+  <div><svg role="img" aria-label="TenChar logo"><use href="#logo"/></svg>TenChar · © 2026 MD Shourav Hossain (<a href="https://github.com/rhshourav">rhshourav</a>)</div>
   <div>Free software under the <a href="https://www.gnu.org/licenses/agpl-3.0.html">GNU AGPL v3</a> · <a href="https://github.com/rhshourav/TenChar">Android</a> · <a href="https://github.com/rhshourav/TenChar-Desktop">Desktop</a></div>
 </div></footer>
 
 <script>
 const seg=window.Intl&&Intl.Segmenter?new Intl.Segmenter(undefined,{granularity:"grapheme"}):null;
 const g=s=>seg?[...seg.segment(s)].map(x=>x.segment):Array.from(s);
-const $=id=>document.getElementById(id),inp=$("msg"),cnt=$("cnt"),log=$("log"),wire=$("wire");
-function clip(){const a=g(inp.value);if(a.length>10)inp.value=a.slice(0,10).join("");cnt.textContent=Math.min(a.length,10)+"/10"}
-function env(){const b=new Uint8Array(135);crypto.getRandomValues(b);return btoa(String.fromCharCode(...b))}
-function add(t,me){const d=document.createElement("div");d.className="b "+(me?"me":"th");d.textContent=t;log.appendChild(d);log.scrollTop=log.scrollHeight}
-const rep=["on my way","👍","ok, 5 min","ঠিক আছে","see you","coffee?"];let i=0;
-inp.addEventListener("input",clip);
-$("f").addEventListener("submit",e=>{e.preventDefault();const t=inp.value.trim();if(!t)return;add(t,1);inp.value="";clip();wire.textContent=env();setTimeout(()=>add(rep[i++%rep.length],0),900)});
-wire.textContent=env();
-[["TenChar","a"],["TenChar-Desktop","d"]].forEach(([r,k])=>fetch("https://api.github.com/repos/rhshourav/"+r+"/releases/latest").then(x=>x.ok?x.json():Promise.reject()).then(j=>document.querySelectorAll('[data-v="'+k+'"]').forEach(e=>{e.textContent=j.tag_name;e.hidden=false})).catch(()=>{}));
+const $=id=>document.getElementById(id),$$=q=>document.querySelectorAll(q);
+const inp=$("msg"),msgs=$("msgs"),snd=$("snd"),cn=$("cn"),wire=$("wire"),day=msgs.firstElementChild;
+const RM=matchMedia("(prefers-reduced-motion:reduce)").matches;
+const now=()=>new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+const wait=ms=>RM?Promise.resolve():new Promise(r=>setTimeout(r,ms));
+const st=document.createElement("div");st.className="st";
+const rep=["on my way","👍","ok, 5 min","ঠিক আছে","see you","coffee?"];let run=0,i=0;
+$("clk").textContent=now();
+function clip(){const a=g(inp.value);if(a.length>10)inp.value=a.slice(0,10).join("");const n=Math.min(a.length,10);cn.textContent=n+"/10";cn.classList.toggle("full",n===10);snd.disabled=!n}
+function seal(){const b=new Uint8Array(135);crypto.getRandomValues(b);wire.style.opacity=0;setTimeout(()=>{wire.textContent=btoa(String.fromCharCode(...b));wire.style.opacity=1},RM?0:160)}
+function add(t,me){const d=document.createElement("div");d.className="m "+(me?"me":"th");d.innerHTML="<span></span><time>"+now()+"</time>";d.firstChild.textContent=t;msgs.append(d);if(me){msgs.append(st);st.textContent="Sending…";setTimeout(()=>st.textContent="Delivered",RM?0:800)}msgs.scrollTop=msgs.scrollHeight;seal()}
+function typing(){const d=document.createElement("div");d.className="m th ty";d.innerHTML="<i></i><i></i><i></i>";msgs.append(d);msgs.scrollTop=msgs.scrollHeight;return d}
+function halt(){run++;msgs.querySelectorAll(".ty").forEach(e=>e.remove())}
+function send(t){inp.value="";clip();add(t,1)}
+async function play(){const id=++run,w=async ms=>{await wait(ms);return id===run};
+ msgs.replaceChildren(day);inp.value="";clip();
+ if(!await w(800))return;const t=typing();
+ if(!await w(1100))return;t.remove();add("free tonight?",0);
+ if(!await w(1500))return;
+ for(const c of g("yes, at 8?")){if(!await w(75))return;inp.value+=c;clip()}
+ if(!await w(600))return;send(inp.value);
+ if(!await w(1700))return;const u=typing();
+ if(!await w(1200))return;u.remove();add("👍 see you",0)}
+inp.addEventListener("focus",halt);
+inp.addEventListener("input",()=>{halt();clip()});
+$("f").addEventListener("submit",e=>{e.preventDefault();const t=inp.value.trim();if(!t)return;halt();send(t);const id=run;setTimeout(()=>{if(id!==run)return;const u=typing();setTimeout(()=>{if(id!==run)return;u.remove();add(rep[i++%rep.length],0)},1200)},900)});
+$("rp").onclick=play;
+new IntersectionObserver((e,o)=>{if(e[0].isIntersecting){o.disconnect();play()}},{threshold:.5}).observe($("dev"));
+document.addEventListener("click",e=>{if(!e.target.closest(".gh"))$$(".gh")[0].open=false});
+(function t(k){const u=["assets/logo.svg","assets/logo.png"];if(k>1)return;const m=new Image();m.onload=()=>{$$("svg[role=img]").forEach(v=>{const c=m.cloneNode();c.alt="TenChar logo";c.className="lg";v.replaceWith(c)});document.querySelector("link[rel=icon]").href=m.src};m.onerror=()=>t(k+1);m.src=u[k]})(0);
+[["TenChar","a"],["TenChar-Desktop","d"]].forEach(([r,k])=>fetch("https://api.github.com/repos/rhshourav/"+r+"/releases/latest").then(x=>x.ok?x.json():Promise.reject()).then(j=>$$('[data-v="'+k+'"]').forEach(e=>{e.textContent=j.tag_name;e.hidden=false})).catch(()=>{}));
 </script>
 </body>
 </html>
