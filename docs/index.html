@@ -84,6 +84,8 @@ ul.l li::before{content:"";position:absolute;left:0;top:.55em;width:10px;height:
 .dl{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .dl .plate{padding:30px;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
 .dl p{color:var(--muted);font-size:16px;flex:1}
+.ver{font:12px "JetBrains Mono",monospace;padding:2px 8px;border-radius:99px;background:rgba(0,0,0,.2)}.ver[hidden]{display:none}
+.acts{display:flex;flex-wrap:wrap;gap:10px}
 footer{border-top:1px solid var(--edge);padding:36px 0 56px;color:var(--muted);font-size:15px}
 footer .w{display:flex;flex-wrap:wrap;gap:16px 40px;align-items:center;justify-content:space-between}
 footer svg{width:30px;height:26px;vertical-align:middle;margin-right:8px}
@@ -112,14 +114,14 @@ footer svg{width:30px;height:26px;vertical-align:middle;margin-right:8px}
     <h1>Say it in ten characters.</h1>
     <p class="lead">A private messenger for two people. No account, no phone number, no tracking. Every message is end-to-end encrypted and travels in an envelope of exactly the same size.</p>
     <div class="cta">
-      <a class="btn p" href="https://github.com/rhshourav/TenChar">Android app on GitHub</a>
-      <a class="btn" href="https://github.com/rhshourav/TenChar-Desktop">Desktop client on GitHub</a>
+      <a class="btn p" href="https://github.com/rhshourav/TenChar/releases/latest">Download for Android <span class="ver" data-v="a" hidden></span></a>
+      <a class="btn" href="https://github.com/rhshourav/TenChar-Desktop/releases/latest">Download for desktop <span class="ver" data-v="d" hidden></span></a>
     </div>
     <p class="fine">Open source under AGPL-3.0. <b>Not yet independently audited</b>, so don’t rely on it where a flaw could cause harm.</p>
   </div>
 
   <div class="plate phone" aria-label="Interactive demo">
-    <div class="ph"><div class="av" aria-hidden="true">R</div><div><strong>Kamran</strong><small>Verified · 8-digit number matched</small></div></div>
+    <div class="ph"><div class="av" aria-hidden="true">R</div><div><strong>Rafi</strong><small>Verified · 8-digit number matched</small></div></div>
     <div id="log" role="log" aria-live="polite">
       <div class="b th">hey, free?</div>
       <div class="b me">yes! 5 min</div>
@@ -200,8 +202,8 @@ footer svg{width:30px;height:26px;vertical-align:middle;margin-right:8px}
   <h2>Get TenChar</h2>
   <p class="sub">Both apps speak the same protocol and the same relays, so a phone and a computer can share a conversation.</p>
   <div class="dl">
-    <div class="plate"><h3>Android</h3><p>Kotlin and Jetpack Compose. Keys are wrapped by the Android Keystore and need your screen lock to open.</p><a class="btn p" href="https://github.com/rhshourav/TenChar">Source and releases</a></div>
-    <div class="plate"><h3>Desktop</h3><p>C++20 and Qt 6, same look and feel. Verified on Linux; Windows and macOS are the targets and need testing.</p><a class="btn" href="https://github.com/rhshourav/TenChar-Desktop">Source and build scripts</a></div>
+    <div class="plate"><h3>Android</h3><p>Kotlin and Jetpack Compose. Keys are wrapped by the Android Keystore and need your screen lock to open.</p><div class="acts"><a class="btn p" href="https://github.com/rhshourav/TenChar/releases/latest">Latest release <span class="ver" data-v="a" hidden></span></a><a class="btn" href="https://github.com/rhshourav/TenChar">Source</a></div></div>
+    <div class="plate"><h3>Desktop</h3><p>C++20 and Qt 6, same look and feel. Verified on Linux; Windows and macOS are the targets and need testing.</p><div class="acts"><a class="btn p" href="https://github.com/rhshourav/TenChar-Desktop/releases/latest">Latest release <span class="ver" data-v="d" hidden></span></a><a class="btn" href="https://github.com/rhshourav/TenChar-Desktop">Source and build scripts</a></div></div>
   </div>
   <p class="fine">Read the protocol and relay API in the <code>docs</code> folder of the Android repository, or run your own relay from its <code>relay</code> folder.</p>
 </section>
@@ -223,6 +225,7 @@ const rep=["on my way","👍","ok, 5 min","ঠিক আছে","see you","coffe
 inp.addEventListener("input",clip);
 $("f").addEventListener("submit",e=>{e.preventDefault();const t=inp.value.trim();if(!t)return;add(t,1);inp.value="";clip();wire.textContent=env();setTimeout(()=>add(rep[i++%rep.length],0),900)});
 wire.textContent=env();
+[["TenChar","a"],["TenChar-Desktop","d"]].forEach(([r,k])=>fetch("https://api.github.com/repos/rhshourav/"+r+"/releases/latest").then(x=>x.ok?x.json():Promise.reject()).then(j=>document.querySelectorAll('[data-v="'+k+'"]').forEach(e=>{e.textContent=j.tag_name;e.hidden=false})).catch(()=>{}));
 </script>
 </body>
 </html>
