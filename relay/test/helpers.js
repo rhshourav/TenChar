@@ -30,12 +30,14 @@ export function makeHarness(options = {}) {
   const clock = { t: 1_800_000_000_000 };
   const storage = new MemoryStorage();
   const core = new RoomCore(storage, { now: () => clock.t, ...options });
-  const call = (action, { auth, body, query } = {}) =>
+  const call = (action, { auth, body, query, bytes, blob } = {}) =>
     core.handle({
       action,
       authorization: auth ? `Bearer ${auth}` : null,
       query: new URLSearchParams(query ?? ""),
       bodyText: body === undefined ? "" : typeof body === "string" ? body : JSON.stringify(body),
+      bodyBytes: bytes,
+      blob,
     });
   return { clock, storage, core, call, codeToken: rand(24) };
 }
@@ -50,4 +52,14 @@ export async function pair(h) {
   const last = await h.call("reveal", { auth: h.codeToken, body: revealBody(b) });
   if (!last.body.sealed) throw new Error("pairing helper failed");
   return { a, b };
+}
+/** Deterministic pseudo-random bytes, so a failing test shows the same data every time. */
+export function pattern(n, seed = 7) {
+  const out = new Uint8Array(n);
+  let x = seed;
+  for (let i = 0; i < n; i++) {
+    x = (x * 1103515245 + 12345) & 0x7fffffff;
+    out[i] = x >>> 16;
+  }
+  return out;
 }

@@ -2,7 +2,10 @@ package com.rhshourav.tenchar.ui
 
 import android.app.Application
 import android.content.Context
+import android.graphics.Bitmap
+import android.net.Uri
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -13,21 +16,33 @@ import com.rhshourav.tenchar.Hex
 import com.rhshourav.tenchar.MessageLimits
 import com.rhshourav.tenchar.Pairing
 import com.rhshourav.tenchar.RelayAddress
+import com.rhshourav.tenchar.crypto.BlobCrypto
 import com.rhshourav.tenchar.crypto.Handshake
+import com.rhshourav.tenchar.crypto.Kdf
 import com.rhshourav.tenchar.crypto.LocalMember
 import com.rhshourav.tenchar.crypto.Ratchet
 import com.rhshourav.tenchar.crypto.SystemRandom
 import com.rhshourav.tenchar.crypto.Wire
+import com.rhshourav.tenchar.media.ImageCompressor
+import com.rhshourav.tenchar.media.MediaLoader
+import com.rhshourav.tenchar.media.TempFiles
+import com.rhshourav.tenchar.media.VideoTranscoder
+import com.rhshourav.tenchar.media.VoicePlayer
+import com.rhshourav.tenchar.media.VoiceRecorder
 import com.rhshourav.tenchar.net.FailReason
 import com.rhshourav.tenchar.net.PairOutcome
 import com.rhshourav.tenchar.net.PairingFlow
 import com.rhshourav.tenchar.net.RelayClient
 import com.rhshourav.tenchar.net.Reply
+import com.rhshourav.tenchar.notify.Alerts
+import com.rhshourav.tenchar.notify.WatchStore
 import com.rhshourav.tenchar.store.AppState
+import com.rhshourav.tenchar.store.Attachment
 import com.rhshourav.tenchar.store.Authenticator
 import com.rhshourav.tenchar.store.Conversation
 import com.rhshourav.tenchar.store.KeysLostException
 import com.rhshourav.tenchar.store.KeysLostReason
+import com.rhshourav.tenchar.store.MediaStore
 import com.rhshourav.tenchar.store.OutboxItem
 import com.rhshourav.tenchar.store.Profile
 import com.rhshourav.tenchar.store.StateCodec
@@ -36,14 +51,16 @@ import com.rhshourav.tenchar.store.Vault
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.IOException
-import java.util.Base64
 import javax.crypto.Cipher
 
 enum class Screen { Setup, Gate, Chats, Pair, EnterCode, Waiting, Verify, Chat, ChatSettings, Settings, About, KeysReset }
@@ -61,10 +78,38 @@ enum class Notice { Mismatch, Forgotten, Timeout, Unreachable, Tampered, Full, S
 /** How the relays look from here. Gone means every relay says the conversation no longer exists. */
 enum class Connection { Online, Offline, Gone }
 
-/** Why turning notifications on did not work. */
-enum class PushProblem { Unsupported, Rejected, Unreachable }
+/** How often the alert service asks the relays whether a message is waiting. */
+enum class AlertInterval(val seconds: Int) {
+    Seconds30(Constants.ALERT_INTERVAL_SHORT_S),
+    Minute1(Constants.ALERT_INTERVAL_MEDIUM_S),
+    Minutes5(Constants.ALERT_INTERVAL_LONG_S),
+}
 
-class ChatMessage(val id: Long, val text: String, val mine: Boolean, initial: Delivery?) {
+/** Why a photo, voice message or video was not sent. */
+enum class MediaNotice { TooLong, TooBig, TooShort, Unsupported, Failed, MicBusy, MicDenied }
+
+/** What the screens know about an attachment. The key and the content stay in the store. [state] is an [Attachment] state. */
+class AttachmentUi(
+    val id: String,
+    val kind: Int,
+    val width: Int,
+    val height: Int,
+    val durationDs: Int,
+    val wave: ByteArray,
+    initialState: Int,
+) {
+    var state by mutableStateOf(initialState)
+}
+
+class ChatMessage(
+    val id: Long,
+    val text: String,
+    val mine: Boolean,
+    initial: Delivery?,
+    /** When it was sent or received, milliseconds since 1970; 0 if unknown (saved by an older version). */
+    val at: Long = 0L,
+    val attachment: AttachmentUi? = null,
+) {
     var delivery by mutableStateOf(initial)
 }
 
@@ -80,7 +125,6 @@ class ChatEntry(val id: String) {
     var theirLabelIsMine by mutableStateOf(false)
     var unread by mutableStateOf(0)
     var verified by mutableStateOf(false)
-    var notifications by mutableStateOf(false)
     var endpoints by mutableStateOf<List<String>>(emptyList())
 }
 
@@ -112,8 +156,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var fallbackUrl by mutableStateOf(Constants.FALLBACK_RELAY_URL)
         private set
-    var pushServer by mutableStateOf(Constants.DEFAULT_PUSH_SERVER)
-        private set
 
     /** True while this phone is joining with a typed code (as opposed to showing its own). */
     var joining by mutableStateOf(false)
@@ -126,6 +168,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** Set when the saved data cannot be opened. The files are still on the phone. */
     var lostReason by mutableStateOf<KeysLostReason?>(null)
         private set
+
+    /** What Android actually reported when the key was lost (an exception name, never a secret), shown to help diagnose it. */
+    var lostDetail by mutableStateOf<String?>(null)
+        private set
     var connection by mutableStateOf(Connection.Online)
         private set
     var verification by mutableStateOf<String?>(null)
@@ -135,11 +181,27 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var defaultProfile by mutableStateOf(Profile.EMPTY)
         private set
 
-    /** The address to subscribe to in the push app, shown after notifications are turned on. */
-    var pushHelp by mutableStateOf<String?>(null)
+    /** Message alerts from the built-in background service (see [Alerts]). */
+    var alertsOn by mutableStateOf(false)
         private set
-    var pushProblem by mutableStateOf<PushProblem?>(null)
+    var alertInterval by mutableStateOf(AlertInterval.Seconds30)
         private set
+
+    /** True while a photo or video is being prepared. */
+    var mediaBusy by mutableStateOf(false)
+        private set
+    var mediaNotice by mutableStateOf<MediaNotice?>(null)
+        private set
+
+    /** Voice recording in progress: how long, and the loudness of the most recent moments (0 to 1, oldest first). */
+    var recording by mutableStateOf(false)
+        private set
+    var recordMs by mutableIntStateOf(0)
+        private set
+    var recordLevels by mutableStateOf<List<Float>>(emptyList())
+        private set
+    val voice = VoicePlayer()
+
     var currentId by mutableStateOf<String?>(null)
         private set
 
@@ -154,6 +216,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         getApplication<Application>().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     }
     private val vault = Vault(application)
+    internal val media = MediaStore(application)
     private val random = SystemRandom
     private val gate = Mutex()
     private val clients = HashMap<String, RelayClient>()
@@ -169,7 +232,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var pairingJob: Job? = null
     private var flow: PairingFlow? = null
     private var pollJob: Job? = null
+    private var transferJob: Job? = null
+    private var recorder: VoiceRecorder? = null
+    private var recordJob: Job? = null
     private val wake = Channel<Unit>(Channel.CONFLATED)
+    private val transferWake = Channel<Unit>(Channel.CONFLATED)
+    private val transferRetryAt = HashMap<String, Long>()
 
     val setupDone: Boolean get() = prefs.getBoolean(KEY_SETUP_DONE, false)
 
@@ -178,7 +246,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         prefs.getString(KEY_RELAY, null)?.let { RelayAddress.normalise(it) }?.let { relayUrl = it }
         fallbackEnabled = prefs.getBoolean(KEY_FALLBACK_ON, true)
         prefs.getString(KEY_FALLBACK, null)?.let { RelayAddress.normalise(it) }?.let { fallbackUrl = it }
-        prefs.getString(KEY_PUSH_SERVER, null)?.let { RelayAddress.normalise(it) }?.let { pushServer = it }
+        alertsOn = Alerts.enabled(application)
+        val seconds = Alerts.intervalSeconds(application)
+        AlertInterval.entries.firstOrNull { it.seconds == seconds }?.let { alertInterval = it }
         AutoLock.entries.firstOrNull { it.name == prefs.getString(KEY_AUTOLOCK, null) }?.let { autoLock = it }
         screen = if (setupDone) Screen.Gate else Screen.Setup
     }
@@ -217,19 +287,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().putBoolean(KEY_FALLBACK_ON, value).apply()
     }
 
-    fun savePushServer(input: String): Boolean {
-        val value = RelayAddress.normalise(input) ?: return false
-        pushServer = value
-        if (value == Constants.DEFAULT_PUSH_SERVER) prefs.edit().remove(KEY_PUSH_SERVER).apply()
-        else prefs.edit().putString(KEY_PUSH_SERVER, value).apply()
-        return true
-    }
-
-    fun resetPushServer() {
-        pushServer = Constants.DEFAULT_PUSH_SERVER
-        prefs.edit().remove(KEY_PUSH_SERVER).apply()
-    }
-
     fun chooseAutoLock(value: AutoLock) {
         autoLock = value
         prefs.edit().putString(KEY_AUTOLOCK, value.name).apply()
@@ -256,11 +313,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         unlocking = true
         unlockFailed = false
         val create = !vault.exists()
+        val legacy = !create && vault.isLegacy()
         val cipher = try {
-            if (create) vault.cipherForCreate() else vault.cipherForUnlock()
+            when {
+                create -> {
+                    vault.prepareCreate()
+                    null
+                }
+                legacy -> vault.legacyCipherForUnlock()
+                else -> null
+            }
         } catch (e: KeysLostException) {
             unlocking = false
-            keysLost(e.reason)
+            keysLost(e.reason, e.cause)
             return
         } catch (e: Exception) {
             // Temporary: nothing is touched, the person can simply try again.
@@ -270,7 +335,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         auth.authenticate(
             cipher,
-            onSuccess = { authed -> finishUnlock(authed, create) },
+            onSuccess = { authed -> finishUnlock(authed, create, legacy) },
             onFailure = { cancelled ->
                 unlocking = false
                 unlockFailed = !cancelled
@@ -278,12 +343,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    private fun finishUnlock(cipher: Cipher, create: Boolean) {
+    private fun finishUnlock(cipher: Cipher?, create: Boolean, legacy: Boolean) {
         val key = try {
-            if (create) vault.completeCreate(cipher) else vault.completeUnlock(cipher)
+            when {
+                create -> vault.completeCreate()
+                legacy && cipher != null -> vault.completeLegacyUnlock(cipher).also { vault.migrateFromLegacy(it) }
+                else -> vault.completeUnlock()
+            }
         } catch (e: KeysLostException) {
             unlocking = false
-            keysLost(e.reason)
+            keysLost(e.reason, e.cause)
             return
         } catch (e: Exception) {
             unlocking = false
@@ -315,14 +384,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 dek = key
                 app = state
                 defaultProfile = state.defaultProfile
-                goneRounds.clear(); connectionOf.clear(); retryAt.clear(); nextDue.clear()
+                goneRounds.clear(); connectionOf.clear(); retryAt.clear(); nextDue.clear(); transferRetryAt.clear()
                 syncAll()
                 goto(if (state.conversations.isEmpty()) Screen.Pair else Screen.Chats)
                 if (resave) gate.withLock { persist() }
-                reRegisterPush()
+                tidyMedia(state)
+                syncWatches(state)
             } catch (e: KeysLostException) {
                 key.fill(0)
-                keysLost(e.reason)
+                keysLost(e.reason, e.cause)
             } catch (e: Exception) {
                 key.fill(0)
                 unlockFailed = true
@@ -336,7 +406,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun lock() {
         if (screen == Screen.Setup || screen == Screen.KeysReset || screen == Screen.Gate) return
         cancelPairing()
+        cancelRecording()
         stopPolling()
+        voice.stop()
+        MediaLoader.clear()
         app?.wipe()
         app = null
         dek?.fill(0)
@@ -348,8 +421,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         entry = ""
         draft = ""
         notice = null
-        pushHelp = null
-        pushProblem = null
+        mediaNotice = null
         goto(Screen.Gate)
     }
 
@@ -357,9 +429,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * The saved data cannot be opened and trying again will not help (for example Android removed the key). The files are
      * **not** deleted: the person sees why, can try again, and erases only by choosing to.
      */
-    private fun keysLost(reason: KeysLostReason) {
+    private fun keysLost(reason: KeysLostReason, cause: Throwable? = null) {
         cancelPairing()
+        cancelRecording()
         stopPolling()
+        voice.stop()
+        MediaLoader.clear()
         app?.wipe()
         app = null
         dek?.fill(0)
@@ -368,12 +443,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         currentId = null
         verification = null
         lostReason = reason
+        lostDetail = cause?.javaClass?.simpleName
         goto(Screen.KeysReset)
     }
 
     /** "Try again" on the keys-reset screen: back to the gate with nothing changed. */
     fun retryUnlock() {
         lostReason = null
+        lostDetail = null
         unlockFailed = false
         goto(Screen.Gate)
     }
@@ -381,7 +458,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** "Erase and start over": the only way saved data is removed after a failure, and only by the person's choice. */
     fun eraseAndStartOver() {
         vault.wipe()
+        viewModelScope.launch(Dispatchers.IO) { media.wipeAll() }
+        WatchStore.clear(getApplication())
+        Alerts.setEnabled(getApplication(), false)
+        Alerts.stopService(getApplication())
+        alertsOn = false
         lostReason = null
+        lostDetail = null
         unlockFailed = false
         notice = null
         goto(Screen.Gate)
@@ -425,7 +508,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         e.theirLabelIsMine = c.themLocal != null
         e.unread = c.unread
         e.verified = c.verified
-        e.notifications = c.pushUrl != null
         e.endpoints = c.endpoints
     }
 
@@ -454,12 +536,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         verification = conv.verification
         connection = connectionOf[id] ?: Connection.Online
         draft = ""
+        mediaNotice = null
         goto(if (conv.verified) Screen.Chat else Screen.Verify)
         viewModelScope.launch { gate.withLock { persist() } }
         wake.trySend(Unit)
+        transferWake.trySend(Unit)
     }
 
     fun closeChat() {
+        cancelRecording()
+        voice.stop()
         currentId = null
         messages.clear()
         verification = null
@@ -638,12 +724,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         conv.verified = true
         entries[conv.localId]?.let { syncEntry(it, conv) }
         goto(Screen.Chat)
+        val state = app
         viewModelScope.launch {
             gate.withLock {
                 queueProfile(conv) // tell them how you appear
                 persist()
             }
             wake.trySend(Unit)
+            if (state != null) syncWatches(state)
         }
     }
 
@@ -658,6 +746,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val relays = conv.endpoints
         val room = conv.room
         val token = conv.memberToken
+        val mediaIds = conv.messages.mapNotNull { it.attachment?.id }
+        viewModelScope.launch(Dispatchers.IO) { mediaIds.forEach(media::delete) }
         viewModelScope.launch {
             for (ep in relays) {
                 try {
@@ -674,6 +764,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         entries.remove(conv.localId)
         syncAll()
         if (currentId == conv.localId) {
+            cancelRecording()
+            voice.stop()
             currentId = null
             messages.clear()
             verification = null
@@ -681,7 +773,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         notice = reason
         goto(if (state.conversations.isEmpty()) Screen.Pair else Screen.Chats)
-        viewModelScope.launch { gate.withLock { persist() } }
+        viewModelScope.launch {
+            gate.withLock { persist() }
+            syncWatches(state) // the service stops asking about a chat that no longer exists
+        }
     }
 
     // ---- names, avatars, notifications -----------------------------------------------------------------
@@ -729,83 +824,88 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ---- message alerts ----------------------------------------------------------------------------------------
+
     /**
-     * Turns notifications for a chat on or off. Notifications come from a push service (ntfy by default), not from
-     * Google: the relay sends it a short fixed "New message" notice at a secret address only this chat uses. The
-     * person subscribes to that address in the push app.
+     * Turns message alerts on or off for every chat. They come from a small background service in this app (see
+     * [Alerts]): no Google, no push server, no third party. Each chat gets a random watch token whose hash is
+     * registered with its relays; the service uses the token to ask how many messages wait, and can do nothing else with it.
      */
-    fun setNotifications(id: String, on: Boolean) {
+    fun setAlerts(on: Boolean) {
         val state = app ?: return
-        val conv = state.find(id) ?: return
+        val context = getApplication<Application>()
+        Alerts.setEnabled(context, on)
+        alertsOn = on
         viewModelScope.launch {
             if (on) {
-                val url = pushServer.trimEnd('/') + "/" + newTopic()
-                var ok = false
-                var problem: PushProblem? = null
-                for (ep in conv.endpoints) {
-                    when (val r = clientFor(ep).registerPush(conv.room, conv.memberToken, url)) {
-                        is Reply.Ok -> ok = true
-                        // 400: this relay does not allow that push service. 404 or 501: the relay predates push.
-                        is Reply.Rejected -> if (r.status == 400) problem = PushProblem.Rejected
-                        else if (problem == null) problem = PushProblem.Unsupported
-                        Reply.Unreachable -> if (problem == null) problem = PushProblem.Unreachable
-                    }
-                }
-                if (app !== state) return@launch
-                if (ok) {
-                    gate.withLock {
-                        conv.pushUrl = url
-                        persist()
-                    }
-                    entries[id]?.let { syncEntry(it, conv) }
-                    pushProblem = null
-                    pushHelp = url
-                } else {
-                    pushProblem = problem ?: PushProblem.Unreachable
-                }
+                syncWatches(state)
+                Alerts.startService(context)
             } else {
-                for (ep in conv.endpoints) clientFor(ep).registerPush(conv.room, conv.memberToken, "")
+                Alerts.stopService(context)
+                WatchStore.clear(context)
+                for (conv in state.conversations.toList()) {
+                    if (conv.watchToken == null) continue
+                    for (ep in conv.endpoints) {
+                        try {
+                            clientFor(ep).registerWatch(conv.room, conv.memberToken, "")
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            // Best effort: with no token on this phone the relay's copy of the hash opens nothing.
+                        }
+                    }
+                }
                 if (app !== state) return@launch
                 gate.withLock {
-                    conv.pushUrl = null
+                    for (conv in state.conversations) conv.watchToken = null
                     persist()
                 }
-                entries[id]?.let { syncEntry(it, conv) }
             }
         }
     }
 
-    fun dismissPushHelp() {
-        pushHelp = null
+    fun chooseAlertInterval(value: AlertInterval) {
+        alertInterval = value
+        Alerts.setIntervalSeconds(getApplication(), value.seconds)
     }
 
-    fun dismissPushProblem() {
-        pushProblem = null
-    }
-
-    /** A relay that lost its data (a free host restarting) forgets addresses, so they are registered again on unlock. */
-    private fun reRegisterPush() {
-        val state = app ?: return
-        viewModelScope.launch {
-            for (conv in state.conversations.toList()) {
-                val url = conv.pushUrl ?: continue
-                for (ep in conv.endpoints) {
-                    try {
-                        clientFor(ep).registerPush(conv.room, conv.memberToken, url)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        // Best effort.
-                    }
+    /**
+     * Makes the relays and the alert service agree with the chats: every verified chat has a watch token, its hash is
+     * registered with each of its relays (again each time, because a relay that lost its data forgets it), and the
+     * service's own small list is rewritten. Does nothing while alerts are off.
+     */
+    private suspend fun syncWatches(state: AppState) {
+        if (!alertsOn) return
+        val context = getApplication<Application>()
+        gate.withLock {
+            var created = false
+            for (conv in state.conversations) {
+                if (conv.verified && conv.watchToken == null) {
+                    conv.watchToken = Hex.encode(ByteArray(32).also(random::nextBytes))
+                    created = true
                 }
             }
+            if (created) persist()
         }
-    }
-
-    private fun newTopic(): String {
-        // 24 random bytes: 192 bits, written as 32 characters from A-Z a-z 0-9 _ - (what the relay accepts).
-        val bytes = ByteArray(24).also(random::nextBytes)
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes).also { bytes.fill(0) }
+        val list = ArrayList<WatchStore.Watch>()
+        for (conv in state.conversations.toList()) {
+            val token = conv.watchToken ?: continue
+            if (!conv.verified) continue
+            val hash = Hex.encode(Kdf.sha256(Hex.decode(token)))
+            for (ep in conv.endpoints) {
+                try {
+                    clientFor(ep).registerWatch(conv.room, conv.memberToken, hash)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Best effort.
+                }
+            }
+            list += WatchStore.Watch(conv.room, token, conv.endpoints, LongArray(conv.endpoints.size))
+        }
+        if (app !== state) return
+        WatchStore.replace(context, list)
+        if (list.isNotEmpty()) Alerts.startService(context)
     }
 
     // ---- messaging -----------------------------------------------------------------------------------------
@@ -841,7 +941,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     } finally {
                         frames.forEach { it.fill(0) }
                     }
-                    addMessage(conv, StoredMessage(id, piece, true, Conversation.DELIVERY_QUEUED))
+                    addMessage(conv, StoredMessage(id, piece, true, Conversation.DELIVERY_QUEUED, System.currentTimeMillis()))
                     for (envelope in envelopes) conv.outbox.add(OutboxItem(id, envelope))
                 }
                 // The ratchet has moved on: save before anything is sent.
@@ -856,8 +956,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val open = conv.localId == currentId
         if (open) messages.add(message.toUi())
         while (conv.messages.size > Conversation.MAX_MESSAGES) {
-            conv.messages.removeAt(0)
+            val dropped = conv.messages.removeAt(0)
             if (open && messages.isNotEmpty()) messages.removeAt(0)
+            dropped.attachment?.let { att ->
+                val id = att.id // before the key is wiped
+                att.wipe()
+                viewModelScope.launch(Dispatchers.IO) { media.delete(id) }
+            }
         }
     }
 
@@ -868,7 +973,375 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             Conversation.DELIVERY_SENT -> Delivery.Sent
             else -> null
         },
+        at,
+        attachment?.let { AttachmentUi(it.id, it.kind, it.width, it.height, it.durationDs, it.wave, it.state) },
     )
+
+    // ---- photos, voice messages and videos ---------------------------------------------------------------------
+    //
+    // An attachment is encrypted with its own key into the media store (see BlobCrypto). The transfer loop then uploads
+    // that file to a relay and only afterwards encrypts a one-frame descriptor, with the key in it, through the ratchet.
+    // The other phone gets the descriptor, downloads the file, checks it and tells the relay to delete it.
+
+    fun dismissMediaNotice() {
+        mediaNotice = null
+    }
+
+    /** The microphone permission was refused. */
+    fun micDenied() {
+        mediaNotice = MediaNotice.MicDenied
+    }
+
+    /** A photo or video chosen in the system picker. Photos are shrunk and stripped of metadata, videos are transcoded. */
+    fun attachPicked(uri: Uri) {
+        val state = app ?: return
+        val conv = conversation(currentId) ?: return
+        if (!conv.verified || mediaBusy || recording) return
+        val context = getApplication<Application>()
+        val isVideo = context.contentResolver.getType(uri)?.startsWith("video/") == true
+        mediaBusy = true
+        mediaNotice = null
+        viewModelScope.launch {
+            try {
+                if (isVideo) prepareVideo(state, conv, uri) else prepareImage(state, conv, uri)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                mediaNotice = MediaNotice.Failed
+            } finally {
+                mediaBusy = false
+            }
+        }
+    }
+
+    private suspend fun prepareImage(state: AppState, conv: Conversation, uri: Uri) {
+        val context = getApplication<Application>()
+        val result = withContext(Dispatchers.Default) { ImageCompressor.compress(context.contentResolver, uri) }
+        if (result == null) {
+            mediaNotice = MediaNotice.Unsupported
+            return
+        }
+        queueAttachment(state, conv, Constants.KIND_IMAGE, result.jpeg, result.width, result.height, 0, ByteArray(0))
+        result.jpeg.fill(0)
+    }
+
+    private suspend fun prepareVideo(state: AppState, conv: Conversation, uri: Uri) {
+        val context = getApplication<Application>()
+        val info = withContext(Dispatchers.IO) { VideoTranscoder.probe(context, uri) }
+        if (info == null) {
+            mediaNotice = MediaNotice.Unsupported
+            return
+        }
+        if (info.durationMs > Constants.VIDEO_MAX_MS + 500) {
+            mediaNotice = MediaNotice.TooLong
+            return
+        }
+        val tmp = VideoTranscoder.tempFile(context)
+        try {
+            if (!VideoTranscoder.transcode(context, uri, info, tmp)) {
+                mediaNotice = MediaNotice.Failed
+                return
+            }
+            val out = withContext(Dispatchers.IO) { VideoTranscoder.probe(context, Uri.fromFile(tmp)) } ?: info
+            val bytes = withContext(Dispatchers.IO) { if (tmp.length() in 1..Constants.MAX_MEDIA_BYTES.toLong()) tmp.readBytes() else null }
+            if (bytes == null) {
+                mediaNotice = MediaNotice.TooBig
+                return
+            }
+            queueAttachment(state, conv, Constants.KIND_VIDEO, bytes, out.width, out.height, (info.durationMs / 100).toInt().coerceIn(1, 0xFFFF), ByteArray(0))
+            bytes.fill(0)
+        } finally {
+            withContext(NonCancellable) { withContext(Dispatchers.IO) { VideoTranscoder.wipe(tmp) } }
+        }
+    }
+
+    /** Encrypts [plain] into the media store and puts a message with it in the chat. The transfer loop sends it. */
+    private suspend fun queueAttachment(
+        state: AppState,
+        conv: Conversation,
+        kind: Int,
+        plain: ByteArray,
+        width: Int,
+        height: Int,
+        durationDs: Int,
+        wave: ByteArray,
+    ) {
+        if (plain.isEmpty() || plain.size > Constants.MAX_MEDIA_BYTES) {
+            mediaNotice = MediaNotice.TooBig
+            return
+        }
+        val att = Attachment(kind, BlobCrypto.newKey(random), plain.size, width, height, durationDs, wave, Attachment.PENDING)
+        withContext(Dispatchers.IO) { media.write(att, plain) }
+        val added = gate.withLock {
+            if (app !== state) return@withLock false
+            addMessage(conv, StoredMessage(conv.nextMsgId++, "", true, Conversation.DELIVERY_QUEUED, System.currentTimeMillis(), att))
+            persist()
+            true
+        }
+        if (!added) {
+            val id = att.id
+            withContext(Dispatchers.IO) { media.delete(id) }
+            return
+        }
+        transferWake.trySend(Unit)
+    }
+
+    fun startRecording() {
+        val conv = conversation(currentId) ?: return
+        if (!conv.verified || recording || mediaBusy) return
+        val r = VoiceRecorder(getApplication())
+        voice.stop()
+        if (!r.start(onLimit = { finishRecording() })) {
+            mediaNotice = MediaNotice.MicBusy
+            return
+        }
+        recorder = r
+        recording = true
+        recordMs = 0
+        recordLevels = emptyList()
+        mediaNotice = null
+        recordJob = viewModelScope.launch {
+            while (isActive) {
+                val live = recorder ?: break
+                live.sample()
+                recordMs = live.elapsedMs
+                recordLevels = live.recent(RECORD_BARS_SHOWN)
+                delay(RECORD_TICK_MS)
+            }
+        }
+    }
+
+    fun cancelRecording() {
+        recordJob?.cancel()
+        recordJob = null
+        recorder?.cancel()
+        recorder = null
+        recording = false
+        recordMs = 0
+        recordLevels = emptyList()
+    }
+
+    /** Stops the recording and sends it. Also called when the two-minute limit is reached. */
+    fun finishRecording() {
+        val r = recorder ?: return
+        val state = app
+        val conv = conversation(currentId)
+        val length = r.elapsedMs
+        recordJob?.cancel()
+        recordJob = null
+        recorder = null
+        recording = false
+        recordMs = 0
+        recordLevels = emptyList()
+        val rec = r.finish()
+        if (rec == null || state == null || conv == null) {
+            if (state != null && conv != null) mediaNotice = if (length < Constants.VOICE_MIN_MS) MediaNotice.TooShort else MediaNotice.Failed
+            return
+        }
+        viewModelScope.launch {
+            try {
+                queueAttachment(state, conv, Constants.KIND_VOICE, rec.audio, 0, 0, (rec.durationMs / 100).coerceIn(1, 0xFFFF), rec.wave)
+            } finally {
+                rec.audio.fill(0)
+            }
+        }
+    }
+
+    private fun storedAttachment(messageId: Long): Attachment? =
+        conversation(currentId)?.messages?.firstOrNull { it.id == messageId }?.attachment
+
+    suspend fun attachmentImage(messageId: Long, maxEdge: Int): Bitmap? =
+        storedAttachment(messageId)?.let { MediaLoader.image(media, it, maxEdge) }
+
+    suspend fun attachmentVideoFrame(messageId: Long, width: Int): Bitmap? =
+        storedAttachment(messageId)?.let { MediaLoader.videoFrame(media, it, width) }
+
+    /** The decrypted content, for the viewer. The caller wipes it when it is done. */
+    suspend fun attachmentBytes(messageId: Long): ByteArray? =
+        storedAttachment(messageId)?.let { MediaLoader.bytes(media, it) }
+
+    fun toggleVoice(messageId: Long) {
+        val att = storedAttachment(messageId) ?: return
+        if (att.state != Attachment.READY) return
+        if (voice.playingId == att.id) {
+            voice.toggle(att.id, ByteArray(0), viewModelScope) // already loaded: pause or resume
+            return
+        }
+        viewModelScope.launch {
+            val audio = MediaLoader.bytes(media, att)
+            if (audio == null) {
+                mediaNotice = MediaNotice.Failed
+                return@launch
+            }
+            voice.toggle(att.id, audio, viewModelScope)
+        }
+    }
+
+    /** Tap on an attachment that failed: try the transfer again. */
+    fun retryAttachment(messageId: Long) {
+        val state = app ?: return
+        val conv = conversation(currentId) ?: return
+        val att = conv.messages.firstOrNull { it.id == messageId }?.attachment ?: return
+        if (att.state != Attachment.FAILED) return
+        setAttachmentState(conv, state, messageId, att, Attachment.PENDING)
+        transferRetryAt.remove("${conv.localId}:$messageId")
+        transferWake.trySend(Unit)
+    }
+
+    private fun setAttachmentState(conv: Conversation, state: AppState, messageId: Long, att: Attachment, value: Int) {
+        att.state = value
+        if (conv.localId == currentId) messages.firstOrNull { it.id == messageId }?.attachment?.state = value
+        viewModelScope.launch { gate.withLock { if (app === state) persist() } }
+    }
+
+    /** Removes files nobody refers to any more (an interrupted transfer, a chat deleted before the last cleanup). */
+    private fun tidyMedia(state: AppState) {
+        val keep = state.conversations.flatMap { c -> c.messages.mapNotNull { it.attachment?.id } }.toSet()
+        viewModelScope.launch(Dispatchers.IO) {
+            media.keepOnly(keep)
+            TempFiles.sweep(getApplication<Application>().cacheDir)
+        }
+    }
+
+    // ---- moving attachments to and from the relays ---------------------------------------------------------------
+    // Runs beside the message loop and never inside its lock, so a slow upload cannot hold up text messages.
+
+    private suspend fun transferLoop() {
+        while (true) {
+            val worked = try {
+                transfers()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                false
+            }
+            withTimeoutOrNull(if (worked) 300L else TRANSFER_IDLE_MS) { transferWake.receive() }
+        }
+    }
+
+    private suspend fun transfers(): Boolean {
+        val state = app ?: return false
+        var worked = false
+        for (conv in state.conversations.toList()) {
+            if (!conv.verified) continue
+            val pending = gate.withLock { conv.messages.filter { it.attachment?.state == Attachment.PENDING } }
+            for (m in pending) {
+                if (app !== state) return worked
+                val retryKey = "${conv.localId}:${m.id}"
+                if ((transferRetryAt[retryKey] ?: 0L) > now()) continue
+                val done = if (m.mine) upload(conv, state, m) else download(conv, state, m)
+                if (done) {
+                    worked = true
+                    transferRetryAt.remove(retryKey)
+                } else {
+                    transferRetryAt[retryKey] = now() + TRANSFER_RETRY_MS
+                }
+            }
+        }
+        return worked
+    }
+
+    /** True when this attachment is settled (sent, or given up on); false to try again later. */
+    private suspend fun upload(conv: Conversation, state: AppState, m: StoredMessage): Boolean {
+        val att = m.attachment ?: return true
+        val file = media.file(att.id)
+        if (!file.isFile) {
+            setAttachmentState(conv, state, m.id, att, Attachment.FAILED)
+            return true
+        }
+        var accepted = false
+        var refused = false
+        var missing = 0
+        for (ep in conv.endpoints) {
+            if (inBackoff(conv, ep)) continue
+            when (val r = clientFor(ep).putBlob(conv.room, conv.memberToken, att.id, file)) {
+                is Reply.Ok -> accepted = true
+                is Reply.Rejected -> when (r.status) {
+                    // These will never succeed. (429, the room's attachment quota being full, will once the other phone downloads.)
+                    413, 400 -> refused = true
+                    // Not found: the room is gone, or this relay predates attachments and was never updated.
+                    404, 405 -> missing++
+                }
+                Reply.Unreachable -> Unit
+            }
+            if (app !== state) return false
+            if (accepted) break
+        }
+        if (!accepted) {
+            if (refused || missing == conv.endpoints.size) {
+                setAttachmentState(conv, state, m.id, att, Attachment.FAILED)
+                return true
+            }
+            return false
+        }
+        gate.withLock {
+            if (app !== state || att.state != Attachment.PENDING) return@withLock
+            val frame = Wire.encodeAttachment(att.kind, att.key, att.size, att.width, att.height, att.durationDs, att.wave)
+            var next = Attachment.FAILED
+            if (frame != null) {
+                try {
+                    conv.outbox.add(OutboxItem(m.id, conv.ratchet.encrypt(frame)))
+                    next = Attachment.READY
+                } catch (e: IllegalStateException) {
+                    // The chain is used up: nothing more can be sent on this chat.
+                } finally {
+                    frame.fill(0)
+                }
+            }
+            att.state = next
+            persist()
+        }
+        if (conv.localId == currentId) messages.firstOrNull { it.id == m.id }?.attachment?.state = att.state
+        wake.trySend(Unit)
+        return true
+    }
+
+    private suspend fun download(conv: Conversation, state: AppState, m: StoredMessage): Boolean {
+        val att = m.attachment ?: return true
+        if (media.exists(att.id)) {
+            setAttachmentState(conv, state, m.id, att, Attachment.READY)
+            return true
+        }
+        val expected = BlobCrypto.cipherSize(att.size).toLong()
+        val part = media.partFile(att.id)
+        var from: String? = null
+        var missing = 0
+        for (ep in conv.endpoints) {
+            if (inBackoff(conv, ep)) continue
+            when (val r = clientFor(ep).getBlob(conv.room, conv.memberToken, att.id, expected, part)) {
+                is Reply.Ok -> from = ep
+                is Reply.Rejected -> if (r.status == 404 || r.status == 410) missing++
+                Reply.Unreachable -> Unit
+            }
+            if (app !== state) {
+                part.delete()
+                return false
+            }
+            if (from != null) break
+        }
+        if (from == null) {
+            // Every relay says it is not there: it expired, or the relay lost it. Waiting will not bring it back.
+            if (missing == conv.endpoints.size) {
+                setAttachmentState(conv, state, m.id, att, Attachment.FAILED)
+                return true
+            }
+            return false
+        }
+        val ok = withContext(Dispatchers.Default) { media.commitDownload(att) }
+        if (!ok) {
+            setAttachmentState(conv, state, m.id, att, Attachment.FAILED) // not what the sender encrypted
+            return true
+        }
+        setAttachmentState(conv, state, m.id, att, Attachment.READY)
+        try {
+            clientFor(from).deleteBlob(conv.room, conv.memberToken, att.id) // free the relay's copy
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Best effort: the relay deletes it after seven days anyway.
+        }
+        return true
+    }
 
     // ---- talking to the relays ------------------------------------------------------------------------------
 
@@ -878,6 +1351,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             screen != Screen.Setup && screen != Screen.Gate && screen != Screen.KeysReset
         if (should) {
             if (pollJob?.isActive != true) pollJob = viewModelScope.launch { pollLoop() }
+            if (transferJob?.isActive != true) transferJob = viewModelScope.launch { transferLoop() }
         } else {
             stopPolling()
         }
@@ -886,6 +1360,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private fun stopPolling() {
         pollJob?.cancel()
         pollJob = null
+        transferJob?.cancel()
+        transferJob = null
     }
 
     private suspend fun pollLoop() {
@@ -1040,6 +1516,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             // A whole message, or one piece of a longer one (shown once the last piece arrives).
             is Wire.Decoded.Text -> decoded.text
             is Wire.Decoded.Fragment -> conv.reassembler.accept(decoded)
+            is Wire.Decoded.AttachmentDescriptor -> {
+                // A photo, voice message or video waiting on a relay: shown at once, filled in when it has downloaded.
+                addMessage(
+                    conv,
+                    StoredMessage(
+                        conv.nextMsgId++, "", false, Conversation.DELIVERY_NONE, System.currentTimeMillis(),
+                        Attachment(decoded.kind, decoded.key, decoded.size, decoded.width, decoded.height, decoded.durationDs, decoded.wave, Attachment.PENDING),
+                    ),
+                )
+                if (conv.localId != currentId) {
+                    conv.unread = (conv.unread + 1).coerceAtMost(UNREAD_CAP)
+                    entries[conv.localId]?.let { syncEntry(it, conv) }
+                }
+                transferWake.trySend(Unit)
+                return
+            }
             is Wire.Decoded.ProfileUpdate -> {
                 // How they appear: cleaned the same way as anything typed here, then shown. Not a message.
                 conv.themShared = Profile.of(decoded.name, decoded.avatar, decoded.color)
@@ -1048,7 +1540,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
             null -> null
         } ?: return
-        addMessage(conv, StoredMessage(conv.nextMsgId++, text, false, Conversation.DELIVERY_NONE))
+        addMessage(conv, StoredMessage(conv.nextMsgId++, text, false, Conversation.DELIVERY_NONE, System.currentTimeMillis()))
         if (conv.localId != currentId) {
             conv.unread = (conv.unread + 1).coerceAtMost(UNREAD_CAP)
             entries[conv.localId]?.let { syncEntry(it, conv) }
@@ -1075,6 +1567,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private fun now(): Long = System.nanoTime() / 1_000_000L
 
     override fun onCleared() {
+        cancelRecording()
+        voice.stop()
         stopPolling()
         app?.wipe()
         dek?.fill(0)
@@ -1088,13 +1582,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         /** The outbox id of frames that are not chat messages (profile updates). */
         const val PROFILE_MSG_ID = -1L
         const val UNREAD_CAP = 999
-        const val PREFS = "tenchar_settings"
+        const val PREFS = Alerts.PREFS
         const val KEY_RELAY = "relay_url"
         const val KEY_FALLBACK = "fallback_url"
         const val KEY_FALLBACK_ON = "fallback_enabled"
-        const val KEY_PUSH_SERVER = "push_server"
         const val KEY_AUTOLOCK = "auto_lock"
         const val KEY_SETUP_DONE = "setup_done"
+        const val RECORD_TICK_MS = 80L
+        const val RECORD_BARS_SHOWN = 32
+        const val TRANSFER_IDLE_MS = 4_000L
+        const val TRANSFER_RETRY_MS = 15_000L
         const val POLL_MS = 3_000L
         const val BACKOFF_MS = 10_000L
 

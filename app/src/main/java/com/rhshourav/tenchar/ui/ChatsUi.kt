@@ -1,9 +1,20 @@
 package com.rhshourav.tenchar.ui
 
+import android.Manifest
+import android.app.NotificationManager
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -201,13 +212,6 @@ internal fun ChatSettingsScreen(vm: AppViewModel) {
         )
         Spacer(Modifier.height(12.dp))
         GlassCard {
-            GlassSwitchRow(
-                text = stringResource(R.string.notifications_label),
-                checked = chat.notifications,
-                onCheckedChange = { vm.setNotifications(chat.id, it) },
-                detail = stringResource(R.string.notifications_detail),
-            )
-            RowDivider()
             GlassRow(stringResource(R.string.settings_show_number), { showNumber = true })
             RowDivider()
             GlassInfoRow(
@@ -279,7 +283,6 @@ internal fun ChatSettingsScreen(vm: AppViewModel) {
             )
         }
     }
-    PushDialogs(vm)
 }
 
 @Composable
@@ -443,107 +446,108 @@ private fun ColourDot(index: Int, selected: Boolean, onSelect: () -> Unit) {
     )
 }
 
-// ---- notifications ----------------------------------------------------------------------------------------
-
-@Composable
-private fun PushDialogs(vm: AppViewModel) {
-    val address = vm.pushHelp
-    val problem = vm.pushProblem
-    val context = LocalContext.current
-    if (address != null) {
-        AlertDialog(
-            onDismissRequest = vm::dismissPushHelp,
-            properties = SecureDialog,
-            containerColor = Tc.Plum,
-            titleContentColor = Tc.Ink,
-            textContentColor = Tc.InkMuted,
-            shape = RoundedCornerShape(28.dp),
-            title = { Text(stringResource(R.string.notifications_help_title)) },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(stringResource(R.string.notifications_help_body), style = MaterialTheme.typography.bodyMedium)
-                    GlassCard(shape = RoundedCornerShape(16.dp)) {
-                        Text(
-                            text = address,
-                            style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
-                            color = Tc.Ink,
-                            modifier = Modifier.padding(14.dp),
-                        )
-                    }
-                    TextButton(
-                        onClick = { copySensitive(context, address) },
-                        colors = ButtonDefaults.textButtonColors(contentColor = Tc.Lavender),
-                    ) { Text(stringResource(R.string.notifications_copy)) }
-                    Text(stringResource(R.string.notifications_privacy), style = MaterialTheme.typography.labelMedium, color = Tc.InkMuted)
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = { openInNtfy(context, address) },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Tc.Mint),
-                ) { Text(stringResource(R.string.notifications_open)) }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = vm::dismissPushHelp,
-                    colors = ButtonDefaults.textButtonColors(contentColor = Tc.Ink),
-                ) { Text(stringResource(R.string.notifications_done)) }
-            },
-        )
-    }
-    if (problem != null) {
-        AlertDialog(
-            onDismissRequest = vm::dismissPushProblem,
-            properties = SecureDialog,
-            containerColor = Tc.Plum,
-            titleContentColor = Tc.Ink,
-            textContentColor = Tc.InkMuted,
-            shape = RoundedCornerShape(28.dp),
-            title = { Text(stringResource(R.string.notifications_label)) },
-            text = {
-                Text(
-                    stringResource(
-                        when (problem) {
-                            PushProblem.Unsupported -> R.string.notifications_unsupported
-                            PushProblem.Rejected -> R.string.notifications_rejected
-                            PushProblem.Unreachable -> R.string.notice_unreachable
-                        },
-                    ),
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = vm::dismissPushProblem,
-                    colors = ButtonDefaults.textButtonColors(contentColor = Tc.Mint),
-                ) { Text(stringResource(R.string.dialog_close)) }
-            },
-        )
-    }
-}
-
-/** ntfy registers itself for ntfy:// links. If it is not installed, the address is copied so it can be pasted into any push app. */
-private fun openInNtfy(context: Context, address: String) {
-    try {
-        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(address.replaceFirst("https://", "ntfy://"))))
-    } catch (e: ActivityNotFoundException) {
-        copySensitive(context, address)
-    }
-}
-
 // ---- settings for the whole app --------------------------------------------------------------------------
 
 @Composable
 internal fun SettingsScreen(vm: AppViewModel) {
     var showRelay by remember { mutableStateOf(false) }
     var showFallback by remember { mutableStateOf(false) }
-    var showPush by remember { mutableStateOf(false) }
     var showDefault by remember { mutableStateOf(false) }
     val me = vm.defaultProfile
+    val context = LocalContext.current
+
+    // What the system currently allows. Android has no callback for coming back from its settings, so look again each second.
+    var looks by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_000)
+            looks++
+        }
+    }
+    val notificationsBlocked = remember(looks, vm.alertsOn) {
+        context.getSystemService(NotificationManager::class.java)?.areNotificationsEnabled() == false
+    }
+    val batteryUnrestricted = remember(looks, vm.alertsOn) {
+        context.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) != false
+    }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        vm.setAlerts(true) // on either answer: if refused, the screen says alerts are blocked and how to allow them
+    }
+    fun turnAlertsOn() {
+        if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            vm.setAlerts(true)
+        }
+    }
 
     TenCharScreen(title = stringResource(R.string.settings_title), onBack = vm::back) {
         SectionTitle(stringResource(R.string.settings_autolock))
         AutoLockCard(vm)
-        Spacer(Modifier.height(24.dp))
+
+        SectionTitle(stringResource(R.string.settings_section_alerts))
+        GlassCard {
+            GlassSwitchRow(
+                text = stringResource(R.string.alerts_label),
+                checked = vm.alertsOn,
+                onCheckedChange = { if (it) turnAlertsOn() else vm.setAlerts(false) },
+                detail = stringResource(R.string.alerts_detail),
+            )
+            if (vm.alertsOn) {
+                RowDivider()
+                Text(
+                    text = stringResource(R.string.alerts_interval),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Tc.InkMuted,
+                    modifier = Modifier.padding(start = 20.dp, top = 12.dp),
+                )
+                Column(Modifier.selectableGroup()) {
+                    AlertInterval.entries.forEach { option ->
+                        LockOptionRow(
+                            selected = vm.alertInterval == option,
+                            label = stringResource(
+                                when (option) {
+                                    AlertInterval.Seconds30 -> R.string.alerts_30s
+                                    AlertInterval.Minute1 -> R.string.alerts_1m
+                                    AlertInterval.Minutes5 -> R.string.alerts_5m
+                                },
+                            ),
+                            onSelect = { vm.chooseAlertInterval(option) },
+                        )
+                    }
+                }
+                if (notificationsBlocked) {
+                    RowDivider()
+                    GlassRow(
+                        text = stringResource(R.string.alerts_blocked),
+                        onClick = {
+                            openSystemScreen(
+                                context,
+                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+                            )
+                        },
+                        caution = true,
+                        detail = stringResource(R.string.alerts_blocked_detail),
+                    )
+                }
+                if (!batteryUnrestricted) {
+                    RowDivider()
+                    GlassRow(
+                        text = stringResource(R.string.alerts_battery),
+                        onClick = { openSystemScreen(context, Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) },
+                        detail = stringResource(R.string.alerts_battery_detail),
+                    )
+                }
+            }
+        }
+        Text(
+            text = stringResource(R.string.alerts_privacy),
+            style = MaterialTheme.typography.labelMedium,
+            color = Tc.InkFaint,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+        )
+
+        SectionTitle(stringResource(R.string.settings_section_chats))
         GlassCard {
             ProfileRow(stringResource(R.string.settings_default_profile), me.name, me.avatar, me.color) { showDefault = true }
             RowDivider()
@@ -567,12 +571,6 @@ internal fun SettingsScreen(vm: AppViewModel) {
                     detail = vm.fallbackUrl.removePrefix("https://"),
                 )
             }
-            RowDivider()
-            GlassRow(
-                text = stringResource(R.string.settings_push_server),
-                onClick = { showPush = true },
-                detail = vm.pushServer.removePrefix("https://"),
-            )
             RowDivider()
             GlassRow(stringResource(R.string.settings_about), { vm.open(Screen.About) })
         }
@@ -612,15 +610,14 @@ internal fun SettingsScreen(vm: AppViewModel) {
             onDismiss = { showFallback = false },
         )
     }
-    if (showPush) {
-        RelayDialog(
-            title = stringResource(R.string.push_server_title),
-            current = vm.pushServer,
-            onSave = vm::savePushServer,
-            onReset = vm::resetPushServer,
-            onDismiss = { showPush = false },
-            body = stringResource(R.string.push_server_body),
-        )
+}
+
+/** Opens one of Android's own settings pages, or does nothing if this phone has no such page. */
+private fun openSystemScreen(context: Context, intent: Intent) {
+    try {
+        context.startActivity(intent)
+    } catch (e: ActivityNotFoundException) {
+        // This phone's settings app has no such page.
     }
 }
 
@@ -662,6 +659,16 @@ internal fun KeysResetScreen(vm: AppViewModel, onUnlock: () -> Unit) {
         }
         Spacer(Modifier.height(12.dp))
         BodyText(stringResource(R.string.keys_reset_kept), center = true)
+        vm.lostDetail?.let { detail ->
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = stringResource(R.string.keys_reset_detail, detail),
+                style = MaterialTheme.typography.labelMedium,
+                color = Tc.InkFaint,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
     if (confirm) {
         AlertDialog(

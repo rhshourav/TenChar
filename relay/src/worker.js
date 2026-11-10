@@ -1,10 +1,12 @@
 // Cloudflare Worker entry. One Durable Object per room keeps "exactly two
 // members" and "sealed" consistent; the Worker only routes. Nothing here logs.
 
-import { MAX_BODY_BYTES } from "./constants.js";
+import { MAX_BLOB_BYTES, MAX_BODY_BYTES } from "./constants.js";
 import { RoomCore, parseRoute } from "./core.js";
-import { jsonResponse, readBodyCapped } from "./http.js";
-import { parsePushHosts, sendPush } from "./push.js";
+import { jsonResponse, readBodyCapped, respond } from "./http.js";
+
+/** Only an attachment upload may be larger than a small JSON body. */
+const bodyLimit = (action) => (action === "put_blob" ? MAX_BLOB_BYTES : MAX_BODY_BYTES);
 
 /** Adapts Durable Object storage to the interface RoomCore expects. */
 export class DoStorage {
@@ -36,16 +38,9 @@ export class Room {
   #ctx;
   #core;
 
-  constructor(ctx, env) {
+  constructor(ctx) {
     this.#ctx = ctx;
-    this.#core = new RoomCore(new DoStorage(ctx.storage), {
-      pushHosts: parsePushHosts(env?.PUSH_HOSTS),
-      // waitUntil keeps the Durable Object alive until the notice has gone out, without delaying the response.
-      notify: (url) => {
-        const sending = sendPush(url);
-        if (typeof ctx.waitUntil === "function") ctx.waitUntil(sending);
-      },
-    });
+    this.#core = new RoomCore(new DoStorage(ctx.storage));
   }
 
   async fetch(request) {
@@ -53,7 +48,12 @@ export class Room {
     const route = parseRoute(request.method, url.pathname);
     if (route.error) return jsonResponse(route.status, { error: route.error });
 
-    const body = await readBodyCapped(request, MAX_BODY_BYTES);
+    const binary = route.action === "put_blob";
+    if (binary) {
+      const refused = await this.#core.authorize(request.headers.get("authorization"));
+      if (refused) return respond(refused);
+    }
+    const body = await readBodyCapped(request, bodyLimit(route.action), { binary });
     if (body.tooLarge) return jsonResponse(413, { error: "too_large" });
     if (body.invalid) return jsonResponse(400, { error: "bad_request" });
 
@@ -62,9 +62,11 @@ export class Room {
       authorization: request.headers.get("authorization"),
       query: url.searchParams,
       bodyText: body.text,
+      bodyBytes: body.bytes,
+      blob: route.blob,
     });
     await this.#ensureAlarm();
-    return jsonResponse(result.status, result.body);
+    return respond(result);
   }
 
   /** Deletes the room when it expires, even if nobody calls again. */
@@ -92,7 +94,7 @@ export default {
     if (route.error) return jsonResponse(route.status, { error: route.error });
 
     const declared = request.headers.get("content-length");
-    if (declared !== null && Number(declared) > MAX_BODY_BYTES) return jsonResponse(413, { error: "too_large" });
+    if (declared !== null && Number(declared) > bodyLimit(route.action)) return jsonResponse(413, { error: "too_large" });
 
     return env.ROOMS.get(env.ROOMS.idFromName(route.room)).fetch(request);
   },

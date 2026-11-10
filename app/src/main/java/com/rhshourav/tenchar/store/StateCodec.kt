@@ -30,14 +30,15 @@ import java.nio.charset.CodingErrorAction
  *   2  one chat; standard UTF-8
  *   3  one chat; messages up to 2,048 bytes; pieces of long messages in progress
  *   4  up to 20 chats, each with its own profiles, notification topic and unread count; a default profile
+ *   5  messages carry a time and may carry an attachment; the notification topic became a watch token
  *
  * **Every version is read.** Changing the format must never be the reason someone's chats disappear: a file
- * from any earlier version opens and is saved back as version 4. Only a file that is genuinely damaged, or from
+ * from any earlier version opens and is saved back as version 5. Only a file that is genuinely damaged, or from
  * a newer app than this one, is refused (and even then nothing is deleted: see Vault).
  */
 object StateCodec {
     private const val MAGIC = 0x54435331 // "TCS1"
-    const val VERSION = 4
+    const val VERSION = 5
     private const val OLDEST = 1
     private const val MAX_OUTBOX = 2000
     private const val MAX_RATCHET_BYTES = 64 * 1024
@@ -137,6 +138,11 @@ object StateCodec {
             writeStr(out, m.text, Constants.MAX_MESSAGE_BYTES)
             out.writeBoolean(m.mine)
             out.writeByte(m.delivery)
+            // Added in version 5.
+            out.writeLong(m.at)
+            val att = m.attachment
+            out.writeBoolean(att != null)
+            if (att != null) writeAttachment(out, att)
         }
         out.writeLong(c.nextMsgId)
         val pending = c.reassembler.pending
@@ -159,9 +165,39 @@ object StateCodec {
         c.themShared?.let { writeProfile(out, it) }
         out.writeBoolean(c.themLocal != null)
         c.themLocal?.let { writeProfile(out, it) }
-        out.writeBoolean(c.pushUrl != null)
-        c.pushUrl?.let { writeStr(out, it, Conversation.MAX_PUSH_URL_BYTES) }
+        // Version 5: the watch token (version 4 had a push address here).
+        out.writeBoolean(c.watchToken != null)
+        c.watchToken?.let { out.write(Hex.decode(it)) }
         out.writeShort(c.unread.coerceIn(0, 0xFFFF))
+    }
+
+    private fun writeAttachment(out: DataOutputStream, a: Attachment) {
+        out.writeByte(a.kind)
+        out.write(a.key)
+        out.writeInt(a.size)
+        out.writeShort(a.width)
+        out.writeShort(a.height)
+        out.writeShort(a.durationDs)
+        out.writeByte(a.wave.size)
+        out.write(a.wave)
+        out.writeByte(a.state)
+    }
+
+    private fun readAttachment(input: DataInputStream): Attachment {
+        val kind = input.readUnsignedByte()
+        if (kind !in Constants.KIND_IMAGE..Constants.KIND_VIDEO) throw IOException("bad attachment kind")
+        val key = ByteArray(32).also(input::readFully)
+        val size = input.readInt()
+        if (size !in 1..Constants.MAX_MEDIA_BYTES) throw IOException("bad attachment size")
+        val width = input.readUnsignedShort()
+        val height = input.readUnsignedShort()
+        val duration = input.readUnsignedShort()
+        val waveSize = input.readUnsignedByte()
+        if (waveSize != 0 && waveSize != Constants.WAVE_BYTES) throw IOException("bad waveform")
+        val wave = ByteArray(waveSize).also(input::readFully)
+        val state = input.readUnsignedByte()
+        if (state > Attachment.FAILED) throw IOException("bad attachment state")
+        return Attachment(kind, key, size, width, height, duration, wave, state)
     }
 
     // ---- reading (every version) ------------------------------------------------------------------------
@@ -237,7 +273,13 @@ object StateCodec {
             val mine = input.readBoolean()
             val delivery = input.readUnsignedByte()
             if (delivery > Conversation.DELIVERY_SENT) throw IOException("bad delivery state")
-            messages.add(StoredMessage(id, text, mine, delivery))
+            var at = 0L
+            var attachment: Attachment? = null
+            if (version >= 5) {
+                at = input.readLong()
+                if (input.readBoolean()) attachment = readAttachment(input)
+            }
+            messages.add(StoredMessage(id, text, mine, delivery, at, attachment))
         }
         val nextId = input.readLong()
 
@@ -265,21 +307,25 @@ object StateCodec {
         var me = Profile.EMPTY
         var shared: Profile? = null
         var local: Profile? = null
-        var topic: String? = null
+        var watch: String? = null
         var unread = 0
         if (version >= 4) {
             localId = Hex.encode(ByteArray(8).also(input::readFully))
             me = readProfile(input)
             if (input.readBoolean()) shared = readProfile(input)
             if (input.readBoolean()) local = readProfile(input)
-            if (input.readBoolean()) topic = readStr(input, Conversation.MAX_PUSH_URL_BYTES)
+            if (version >= 5) {
+                if (input.readBoolean()) watch = Hex.encode(ByteArray(32).also(input::readFully))
+            } else if (input.readBoolean()) {
+                readStr(input, Conversation.MAX_PUSH_URL_BYTES) // a version 4 push address: alerts work differently now, so it is dropped
+            }
             unread = input.readUnsignedShort()
         }
 
         val conversation = Conversation(
             room = room, memberId = memberId, memberToken = token, endpoints = endpoints, ratchet = ratchet,
             verification = verification, verified = verified, lastIds = lastIds, outbox = outbox, messages = messages,
-            nextMsgId = nextId, localId = localId, me = me, themShared = shared, themLocal = local, pushUrl = topic,
+            nextMsgId = nextId, localId = localId, me = me, themShared = shared, themLocal = local, watchToken = watch,
             unread = unread,
         )
         conversation.reassembler.restore(groups)

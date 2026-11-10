@@ -1,61 +1,100 @@
 // Node server for the same relay logic (used on Render). Standard library only.
 // State lives in memory. If DATA_DIR is set, each room is also written to
-// DATA_DIR/<room>.json after every change, so a restart keeps rooms and
-// queued messages. Nothing is logged except the listening port.
+// DATA_DIR/<room>.json after every change, and each attachment piece to
+// DATA_DIR/<room>.blobs/ once, so a restart keeps rooms, queued messages and
+// waiting attachments. Nothing is logged except the listening port.
 
 import { createServer as createHttpServer } from "node:http";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { MAX_BODY_BYTES } from "./constants.js";
+import { MAX_BLOB_BYTES, MAX_BODY_BYTES } from "./constants.js";
 import { Mutex, RoomCore, isRoomId, parseRoute } from "./core.js";
-import { parsePushHosts, sendPush } from "./push.js";
+
+/** Only an attachment upload may be larger than a small JSON body. */
+const bodyLimit = (action) => (action === "put_blob" ? MAX_BLOB_BYTES : MAX_BODY_BYTES);
 
 const BASE_HEADERS = { "cache-control": "no-store", "x-content-type-options": "nosniff" };
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+// A 9 MiB upload from a phone on a slow link needs far longer than a small JSON request.
+const REQUEST_TIMEOUT_MS = 120_000;
 
 export class MemoryStorage {
-  #map = new Map();
+  #map = new Map(); // key -> JSON text
+  #bin = new Map(); // key -> Uint8Array (attachment pieces)
   version = 0;
+  /** Binary keys written / removed since the last flush to disk. */
+  binDirty = new Set();
+  binGone = new Set();
 
   get size() {
-    return this.#map.size;
+    return this.#map.size + this.#bin.size;
   }
   get(key) {
+    if (this.#bin.has(key)) return this.#bin.get(key);
     const raw = this.#map.get(key);
     return raw === undefined ? undefined : JSON.parse(raw);
   }
   put(key, value) {
-    this.#map.set(key, JSON.stringify(value));
+    if (value instanceof Uint8Array) {
+      this.#bin.set(key, value);
+      this.binDirty.add(key);
+      this.binGone.delete(key);
+    } else {
+      this.#map.set(key, JSON.stringify(value));
+    }
     this.version++;
   }
   delete(keys) {
-    for (const key of keys) this.#map.delete(key);
+    for (const key of keys) {
+      this.#map.delete(key);
+      if (this.#bin.delete(key)) {
+        this.binDirty.delete(key);
+        this.binGone.add(key);
+      }
+    }
     this.version++;
   }
   deleteAll() {
+    for (const key of this.#bin.keys()) {
+      this.binDirty.delete(key);
+      this.binGone.add(key);
+    }
     this.#map.clear();
+    this.#bin.clear();
     this.version++;
   }
   list(prefix, { start, limit } = {}) {
-    const keys = [...this.#map.keys()]
+    const keys = [...this.#map.keys(), ...this.#bin.keys()]
       .filter((key) => key.startsWith(prefix) && (start === undefined || key >= start))
       .sort();
-    return keys.slice(0, limit ?? keys.length).map((key) => [key, JSON.parse(this.#map.get(key))]);
+    return keys.slice(0, limit ?? keys.length).map((key) => [key, this.get(key)]);
   }
+  /** The JSON part only. Attachment pieces are saved one by one (see binaryPiece). */
   snapshot() {
     return Object.fromEntries(this.#map);
+  }
+  binaryPiece(key) {
+    return this.#bin.get(key);
   }
   load(snapshot) {
     for (const [key, raw] of Object.entries(snapshot)) this.#map.set(key, raw);
     this.version++;
   }
+  loadBinary(key, bytes) {
+    this.#bin.set(key, bytes);
+    this.version++;
+  }
 }
 
-function send(res, status, body, { close = false } = {}) {
+function send(res, status, body, { close = false, bytes = null } = {}) {
   const headers = { ...BASE_HEADERS };
   if (close) headers.connection = "close";
-  if (status === 204 || body === null) {
+  if (bytes) {
+    headers["content-type"] = "application/octet-stream";
+    headers["content-length"] = bytes.length;
+    res.writeHead(status, headers).end(bytes);
+  } else if (status === 204 || body === null) {
     res.writeHead(status, headers).end();
   } else {
     headers["content-type"] = "application/json";
@@ -63,7 +102,7 @@ function send(res, status, body, { close = false } = {}) {
   }
 }
 
-function readBody(req, max) {
+function readBody(req, max, binary = false) {
   return new Promise((resolve) => {
     const declared = req.headers["content-length"];
     if (declared !== undefined && Number(declared) > max) return resolve({ tooLarge: true });
@@ -83,6 +122,7 @@ function readBody(req, max) {
     req.on("end", () => {
       if (finished) return;
       finished = true;
+      if (binary) return resolve({ bytes: new Uint8Array(Buffer.concat(chunks)) });
       try {
         resolve({ text: new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks)) });
       } catch {
@@ -97,18 +137,20 @@ function readBody(req, max) {
   });
 }
 
-export function createRelay({
-  dataDir = null,
-  maxRooms = 10000,
-  now = () => Date.now(),
-  pushHosts = parsePushHosts(process.env.PUSH_HOSTS),
-  notify = (url) => void sendPush(url),
-} = {}) {
+export function createRelay({ dataDir = null, maxRooms = 10000, now = () => Date.now() } = {}) {
   const rooms = new Map(); // room id -> {storage, core, pending, persisted, persistMutex}
 
   function newEntry() {
     const storage = new MemoryStorage();
-    return { storage, core: new RoomCore(storage, { now, pushHosts, notify }), pending: 0, persisted: 0, persistMutex: new Mutex() };
+    return { storage, core: new RoomCore(storage, { now }), pending: 0, persisted: 0, persistMutex: new Mutex() };
+  }
+
+  const blobFile = (id, key) => join(dataDir, `${id}.blobs`, `${key.replaceAll(":", "_")}.bin`);
+
+  async function writeFileAtomic(file, data) {
+    const tmp = `${file}.tmp`;
+    await writeFile(tmp, data, { mode: 0o600 });
+    await rename(tmp, file);
   }
 
   async function persist(id, entry) {
@@ -116,12 +158,25 @@ export function createRelay({
     await entry.persistMutex.run(async () => {
       if (entry.storage.version === entry.persisted) return;
       const file = join(dataDir, `${id}.json`);
+      const { binDirty, binGone } = entry.storage;
       if (entry.storage.size === 0) {
         await rm(file, { force: true });
+        await rm(join(dataDir, `${id}.blobs`), { recursive: true, force: true });
+        binDirty.clear();
+        binGone.clear();
       } else {
-        const tmp = `${file}.tmp`;
-        await writeFile(tmp, JSON.stringify(entry.storage.snapshot()), { mode: 0o600 });
-        await rename(tmp, file);
+        // Attachment pieces are written once, when they arrive, never rewritten with every message.
+        if (binDirty.size > 0) await mkdir(join(dataDir, `${id}.blobs`), { recursive: true, mode: 0o700 });
+        for (const key of [...binDirty]) {
+          const piece = entry.storage.binaryPiece(key);
+          if (piece) await writeFileAtomic(blobFile(id, key), piece);
+          binDirty.delete(key);
+        }
+        for (const key of [...binGone]) {
+          await rm(blobFile(id, key), { force: true });
+          binGone.delete(key);
+        }
+        await writeFileAtomic(file, JSON.stringify(entry.storage.snapshot()));
       }
       entry.persisted = entry.storage.version;
     });
@@ -129,6 +184,22 @@ export function createRelay({
 
   function forgetIfEmpty(id, entry) {
     if (entry.pending === 0 && entry.storage.size === 0) rooms.delete(id);
+  }
+
+  async function loadPieces(id, entry) {
+    let names = [];
+    try {
+      names = await readdir(join(dataDir, `${id}.blobs`));
+    } catch {
+      return; // no attachments in this room
+    }
+    for (const name of names) {
+      const m = /^(b_[0-9a-f]{32}_\d{4})\.bin$/.exec(name);
+      if (!m) continue;
+      const bytes = new Uint8Array(await readFile(join(dataDir, `${id}.blobs`, name)));
+      entry.storage.loadBinary(m[1].replaceAll("_", ":"), bytes);
+    }
+    entry.storage.binDirty.clear();
   }
 
   async function load() {
@@ -140,6 +211,7 @@ export function createRelay({
       try {
         const entry = newEntry();
         entry.storage.load(JSON.parse(await readFile(join(dataDir, name), "utf8")));
+        await loadPieces(id, entry);
         entry.persisted = entry.storage.version;
         rooms.set(id, entry);
       } catch {
@@ -168,7 +240,16 @@ export function createRelay({
     const route = parseRoute(req.method ?? "", url.pathname);
     if (route.error) return send(res, route.status, { error: route.error });
 
-    const body = await readBody(req, MAX_BODY_BYTES);
+    if (route.action === "put_blob") {
+      // Only a member of an existing room gets to send megabytes.
+      const room = rooms.get(route.room);
+      const refused = room ? await room.core.authorize(req.headers.authorization ?? null) : { status: 404, body: { error: "not_found" } };
+      if (refused) {
+        res.once("finish", () => req.socket?.destroy());
+        return send(res, refused.status, refused.body, { close: true });
+      }
+    }
+    const body = await readBody(req, bodyLimit(route.action), route.action === "put_blob");
     if (body.tooLarge) {
       res.once("finish", () => req.socket?.destroy());
       return send(res, 413, { error: "too_large" }, { close: true });
@@ -188,9 +269,11 @@ export function createRelay({
         authorization: req.headers.authorization ?? null,
         query: url.searchParams,
         bodyText: body.text,
+        bodyBytes: body.bytes,
+        blob: route.blob,
       });
       await persist(route.room, entry);
-      send(res, result.status, result.body);
+      send(res, result.status, result.body, { bytes: result.bytes ?? null });
     } finally {
       entry.pending--;
       forgetIfEmpty(route.room, entry);
@@ -204,7 +287,7 @@ export function createRelay({
     });
   });
   server.headersTimeout = 10_000;
-  server.requestTimeout = 15_000;
+  server.requestTimeout = REQUEST_TIMEOUT_MS;
 
   let timer = null;
   return {

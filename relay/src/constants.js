@@ -22,10 +22,15 @@ export const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 export const COMMIT_PREFIX = "tenchar-commit-v1";
 
-// Optional push: a wake-up notice to an address the recipient registered.
-export const PUSH_MIN_INTERVAL_MS = 10 * 1000; // at most one notice per recipient in this time
-export const PUSH_URL_MAX = 128;
-export const DEFAULT_PUSH_HOSTS = ["ntfy.sh"]; // override with PUSH_HOSTS; "none" turns push off
+// Optional alerts: a member can register the hash of a "watch token". With that token (and nothing else) a phone
+// can ask how many messages are waiting, without being able to read, delete or send anything.
+// The relay never makes an outgoing request on a client's behalf.
+
+// Encrypted attachments (photos, voice, short video). The relay stores opaque ciphertext for the other member.
+export const MAX_BLOB_BYTES = 9 * 1024 * 1024; // one blob, ciphertext included. Must equal MAX_BLOB_BYTES in Constants.kt
+export const BLOB_STORE_CHUNK = 64 * 1024; // size of each stored piece (Durable Object values are limited to 128 KiB)
+export const MAX_BLOBS = 64; // waiting blobs per room
+export const MAX_ROOM_BLOB_BYTES = 32 * 1024 * 1024; // waiting blob bytes per room
 
 // Base64 of ENVELOPE_BYTES with no padding. Requires a multiple of 3.
 if (ENVELOPE_BYTES % 3 !== 0) throw new Error("ENVELOPE_BYTES must be a multiple of 3");

@@ -63,14 +63,58 @@ object Constants {
     /** Maximum skipped message keys kept by the ratchet. */
     const val MAX_SKIP = 200
 
-    /** Relay request body cap in bytes. */
+    /** Relay request body cap in bytes (everything except an attachment upload). */
     const val MAX_BODY_BYTES = 512
+
+    // ---- Attachments ---------------------------------------------------------------------------------------------
+
+    /** One uploaded blob, ciphertext included: 9 MiB. The relay refuses more. Must equal MAX_BLOB_BYTES in relay/src/constants.js. */
+    const val MAX_BLOB_BYTES = 9_437_184
+
+    /** The most plaintext one attachment may hold: 8 MiB. Padding and tags still fit under MAX_BLOB_BYTES. */
+    const val MAX_MEDIA_BYTES = 8_388_608
+
+    /** Attachment encryption works in chunks of this many plaintext bytes (each gets its own AES-GCM tag). */
+    const val BLOB_CHUNK_BYTES = 65_536
+
+    /** Plaintext is padded with zeros to a multiple of this, so the relay sees sizes in 16 KiB steps, not exact ones. */
+    const val BLOB_PAD_BYTES = 16_384
+
+    /** Attachment kinds, as carried in the encrypted descriptor. */
+    const val KIND_IMAGE = 1
+    const val KIND_VOICE = 2
+    const val KIND_VIDEO = 3
+
+    /** Photos: longest side, and JPEG quality from 75 down to 70, then smaller, until the file is under the target. */
+    const val IMAGE_MAX_EDGE = 1280
+    const val IMAGE_QUALITY_START = 75
+    const val IMAGE_QUALITY_MIN = 70
+    const val IMAGE_TARGET_BYTES = 400_000
+
+    /** Voice messages: AAC, mono, 16 kHz, 24 kbit/s is about 180 KB a minute. */
+    const val VOICE_MAX_MS = 120_000
+    const val VOICE_MIN_MS = 800
+    const val VOICE_BITRATE = 24_000
+    const val VOICE_SAMPLE_RATE = 16_000
+
+    /** The waveform in a voice descriptor: 40 bars of 4 bits. */
+    const val WAVE_BARS = 40
+    const val WAVE_BYTES = WAVE_BARS / 2
+
+    /** Short video: up to 30 seconds, shortest side 480 px, about 0.8 Mbit/s video. */
+    const val VIDEO_MAX_MS = 30_000
+    const val VIDEO_SHORT_SIDE = 480
+    const val VIDEO_BITRATE = 800_000
+
+    // ---- Alerts --------------------------------------------------------------------------------------------------
+
+    /** How often the background service asks the relays whether a message is waiting. */
+    const val ALERT_INTERVAL_SHORT_S = 30
+    const val ALERT_INTERVAL_MEDIUM_S = 60
+    const val ALERT_INTERVAL_LONG_S = 300
 
     /** The relay used until the person picks another one in Settings. */
     const val DEFAULT_RELAY_URL = "https://tenchar-relay.onrender.com"
-
-    /** The push service new chats use for notifications until it is changed in Settings. Relays must allow its host. */
-    const val DEFAULT_PUSH_SERVER = "https://ntfy.sh"
 
     /** The optional backup relay. Used when the main relay cannot be reached. */
     const val FALLBACK_RELAY_URL = "https://tenchar-relay.tenchar.workers.dev"

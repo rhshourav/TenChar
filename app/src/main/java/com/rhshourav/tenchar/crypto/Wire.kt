@@ -17,6 +17,10 @@ import java.util.Base64
  *                      one longer message share a group and are joined in index order by [Reassembler]
  *   type 3, profile:   the payload is [color 1][avatar length 1][avatar, one emoji][name]; how the sender
  *                      appears to the other person. Not a message: it is never shown in the chat
+ *   type 4, attachment: the payload is [kind 1][key 32][size 4][width 2][height 2][duration 2][waveform 0 or 20];
+ *                      a photo (1), voice message (2) or short video (3) waiting on the relay, encrypted with that
+ *                      key (see [BlobCrypto]). Sizes are big endian, duration is in tenths of a second, the
+ *                      waveform is 40 bars of 4 bits. Always one frame, so there is nothing to reassemble
  *
  * Envelope (what the relay stores, always 135 bytes, 180 base64 characters):
  *   [version 1][ratchet public key 32][previous chain length 4][n 4]   header, 41 bytes
@@ -27,6 +31,8 @@ object Wire {
     const val TYPE_TEXT = 1
     const val TYPE_FRAGMENT = 2
     const val TYPE_PROFILE = 3
+    const val TYPE_ATTACHMENT = 4
+    private const val ATTACHMENT_FIXED = 43
 
     private val encoder = Base64.getEncoder().withoutPadding()
     private val decoder = Base64.getDecoder()
@@ -41,6 +47,65 @@ object Wire {
 
         /** How the sender wants to appear. Strictly well formed but not yet cleaned for display: see Profile.of. */
         class ProfileUpdate(val name: String, val avatar: String, val color: Int) : Decoded
+
+        /** An attachment on the relay. [key] opens it; [size] is the content length; [durationDs] is in tenths of a second. */
+        class AttachmentDescriptor(
+            val kind: Int,
+            val key: ByteArray,
+            val size: Int,
+            val width: Int,
+            val height: Int,
+            val durationDs: Int,
+            val wave: ByteArray,
+        ) : Decoded
+    }
+
+    /** The descriptor frame for an attachment, or null if the values are not ones [decodeAttachment] would accept. */
+    fun encodeAttachment(
+        kind: Int,
+        key: ByteArray,
+        size: Int,
+        width: Int,
+        height: Int,
+        durationDs: Int,
+        wave: ByteArray,
+    ): ByteArray? {
+        if (key.size != 32 || !attachmentFieldsOk(kind, size, width, height, durationDs, wave.size)) return null
+        val len = ATTACHMENT_FIXED + wave.size
+        val frame = ByteArray(Constants.FRAME_BYTES)
+        frame[0] = TYPE_ATTACHMENT.toByte()
+        frame[1] = len.toByte()
+        val buf = ByteBuffer.wrap(frame, 2, len)
+        buf.put(kind.toByte()).put(key).putInt(size).putShort(width.toShort()).putShort(height.toShort())
+            .putShort(durationDs.toShort()).put(wave)
+        return frame
+    }
+
+    private fun attachmentFieldsOk(kind: Int, size: Int, width: Int, height: Int, durationDs: Int, waveSize: Int): Boolean {
+        if (size !in 1..Constants.MAX_MEDIA_BYTES) return false
+        if (width !in 0..0xFFFF || height !in 0..0xFFFF || durationDs !in 0..0xFFFF) return false
+        return when (kind) {
+            Constants.KIND_IMAGE -> width > 0 && height > 0 && durationDs == 0 && waveSize == 0
+            Constants.KIND_VIDEO -> width > 0 && height > 0 && waveSize == 0
+            Constants.KIND_VOICE -> width == 0 && height == 0 && (waveSize == 0 || waveSize == Constants.WAVE_BYTES)
+            else -> false
+        }
+    }
+
+    private fun decodeAttachment(frame: ByteArray): Decoded.AttachmentDescriptor? {
+        val len = frame[1].toInt() and 0xFF
+        if (len < ATTACHMENT_FIXED || len > Constants.MAX_UTF8_BYTES) return null
+        if (!zeroFrom(frame, 2 + len)) return null
+        val buf = ByteBuffer.wrap(frame, 2, len)
+        val kind = buf.get().toInt() and 0xFF
+        val key = ByteArray(32).also { buf.get(it) }
+        val size = buf.int
+        val width = buf.short.toInt() and 0xFFFF
+        val height = buf.short.toInt() and 0xFFFF
+        val durationDs = buf.short.toInt() and 0xFFFF
+        val wave = ByteArray(len - ATTACHMENT_FIXED).also { buf.get(it) }
+        if (!attachmentFieldsOk(kind, size, width, height, durationDs, wave.size)) return null
+        return Decoded.AttachmentDescriptor(kind, key, size, width, height, durationDs, wave)
     }
 
     /** A profile frame: [name] and [avatar] (an emoji, or empty) and a colour number. Null if it cannot fit or is malformed. */
@@ -119,6 +184,7 @@ object Wire {
             TYPE_TEXT -> decodeText(frame)?.let { Decoded.Text(it) }
             TYPE_FRAGMENT -> decodeFragment(frame)
             TYPE_PROFILE -> decodeProfile(frame)
+            TYPE_ATTACHMENT -> decodeAttachment(frame)
             else -> null
         }
     }

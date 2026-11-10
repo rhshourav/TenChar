@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
+  BLOB_STORE_CHUNK,
   ENVELOPE_B64_CHARS,
   ENVELOPE_BYTES,
   FRAME_BYTES,
+  MAX_BLOB_BYTES,
   MAX_BODY_BYTES,
   PAIRING_WINDOW_HOURS,
   PAGE_SIZE,
@@ -23,6 +25,7 @@ test("relay constants equal the Android constants", { skip: !existsSync(kotlin) 
   assert.equal(PAIRING_WINDOW_HOURS, value("PAIRING_WINDOW_HOURS"));
   assert.equal(RETENTION_DAYS, value("RETENTION_DAYS"));
   assert.equal(MAX_BODY_BYTES, value("MAX_BODY_BYTES"));
+  assert.equal(MAX_BLOB_BYTES, value("MAX_BLOB_BYTES"));
   // FRAME_BYTES = 2 + MAX_UTF8_BYTES in Kotlin.
   assert.equal(FRAME_BYTES, 2 + value("MAX_UTF8_BYTES"));
 });
@@ -35,4 +38,6 @@ test("envelope sizes", () => {
   assert.ok(JSON.stringify({ env: "A".repeat(ENVELOPE_B64_CHARS) }).length < MAX_BODY_BYTES);
   // Durable Objects delete at most 128 keys per call.
   assert.ok(PAGE_SIZE <= 128);
+  // A stored piece must fit a Durable Object value (128 KiB).
+  assert.ok(BLOB_STORE_CHUNK <= 128 * 1024);
 });

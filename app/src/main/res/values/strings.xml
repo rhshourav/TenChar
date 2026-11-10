@@ -71,12 +71,54 @@
     <string name="delivery_sent">Sent</string>
     <string name="msg_from_you">You: %1$s</string>
     <string name="msg_from_them">Them: %1$s</string>
+    <string name="day_today">Today</string>
+    <string name="day_yesterday">Yesterday</string>
+
+    <string name="media_attach">Attach a photo or video</string>
+    <string name="media_record">Record a voice message</string>
+    <string name="media_send_voice">Send voice message</string>
+    <string name="media_cancel_recording">Discard recording</string>
+    <string name="media_preparing">Preparing…</string>
+    <string name="media_photo">Photo</string>
+    <string name="media_video">Video, %1$s</string>
+    <string name="media_voice">Voice message, %1$s</string>
+    <string name="media_play">Play</string>
+    <string name="media_pause">Pause</string>
+    <string name="media_close">Close</string>
+    <string name="media_retry">Could not load. Tap to try again.</string>
+    <string name="media_retry_short">Retry</string>
+    <string name="media_unavailable">Unavailable</string>
+    <string name="media_notice_too_long">Videos can be up to 30 seconds. Trim it in your gallery and try again.</string>
+    <string name="media_notice_too_big">That file is too big to send.</string>
+    <string name="media_notice_too_short">Too short. Record a little longer.</string>
+    <string name="media_notice_unsupported">That file cannot be sent. Try a photo or a video.</string>
+    <string name="media_notice_failed">Could not prepare that. Try again.</string>
+    <string name="media_notice_mic_busy">The microphone is not available right now.</string>
+    <string name="media_notice_mic_denied">Allow the microphone in system settings to record voice messages.</string>
 
     <string name="settings_title">Settings</string>
     <string name="settings_autolock">Lock after leaving the app</string>
     <string name="lock_immediately">Immediately</string>
     <string name="lock_30s">After 30 seconds</string>
     <string name="lock_5m">After 5 minutes</string>
+    <string name="settings_section_alerts">Alerts</string>
+    <string name="settings_section_chats">Chats and network</string>
+    <string name="alerts_label">Message alerts</string>
+    <string name="alerts_detail">A quiet background service checks your relays and shows “New message”. No Google or push server is involved.</string>
+    <string name="alerts_interval">Check every</string>
+    <string name="alerts_30s">30 seconds</string>
+    <string name="alerts_1m">1 minute</string>
+    <string name="alerts_5m">5 minutes</string>
+    <string name="alerts_battery">Allow background activity</string>
+    <string name="alerts_battery_detail">Many phones need this to keep alerts arriving while the screen is off.</string>
+    <string name="alerts_blocked">Notifications are blocked</string>
+    <string name="alerts_blocked_detail">Allow notifications for TenChar in system settings to see alerts.</string>
+    <string name="alerts_privacy">An alert says only “New message”: never who sent it, which chat, or what it says. The service cannot open your chats, which stay locked.</string>
+    <string name="notify_channel_messages">New messages</string>
+    <string name="notify_channel_service">Background connection</string>
+    <string name="notify_service_title">Checking for messages</string>
+    <string name="notify_service_text">TenChar asks your relays whether a message is waiting. Tap to open.</string>
+    <string name="notify_message_text">New message</string>
     <string name="settings_show_number">Show verification number</string>
     <string name="settings_relay">Relay address</string>
     <string name="relay_title">Relay address</string>
@@ -92,8 +134,8 @@
     <string name="forget_confirm_yes">Forget</string>
 
     <string name="about_title">About TenChar</string>
-    <string name="about_intro">A private end-to-end encrypted messenger. Each chat is between two people, and a message can be up to 500 characters; longer text is sent as several messages.</string>
-    <string name="about_status">Every message is encrypted on your phone with a Double Ratchet, and the relay only ever holds ciphertext. There are no push notifications: messages arrive while the app is open.</string>
+    <string name="about_intro">A private end-to-end encrypted messenger. Each chat is between two people, and a message can be up to 500 characters; longer text is sent as several messages. You can also send photos, voice messages and short videos.</string>
+    <string name="about_status">Every message is encrypted on your phone with a Double Ratchet, and the relay only ever holds ciphertext. Photos, voice messages and videos are encrypted on your phone with a key of their own before they are uploaded, and photos are stripped of location and camera data. Optional alerts come from a small background service in this app: no Google or third-party push service is involved.</string>
     <string name="about_review">The cryptography is composed by hand from standard primitives (X25519, HKDF, AES-GCM). It is open source but has not been independently reviewed. Do not rely on it where a mistake could put someone in danger.</string>
     <string name="about_not_title">What TenChar will not protect against</string>
     <string name="about_not_1">Malware or a compromised OS on an unlocked phone, screen readers, and accessibility services with permission.</string>
@@ -103,9 +145,11 @@
     <string name="about_not_5">Denial of service, and relay availability.</string>
     <string name="about_not_6">A weak lock screen on the phone.</string>
     <string name="about_not_7">Message length: a longer message needs more encrypted pieces, so a relay can see roughly how long each message is.</string>
+    <string name="about_not_8">Attachments and alerts: the relay can see that you sent a photo, voice message or video, when, and roughly how big it was (rounded up to 16 KiB), never what is in it. With alerts on, it can see which chats this phone checks and how often.</string>
 
     <string name="keys_reset_title">Keys were reset</string>
     <string name="keys_reset_body">TenChar could not open your saved chats.</string>
+    <string name="keys_reset_detail">Technical detail: %1$s</string>
     <string name="chats_title">Chats</string>
     <string name="chats_new">New chat</string>
     <string name="chat_unnamed">Chat %1$d</string>
@@ -124,19 +168,6 @@
     <string name="profile_reset_them">Use the name they chose</string>
     <string name="profile_share_note">Your name and avatar are sent to them, end-to-end encrypted. How you see them stays on this phone.</string>
     <string name="settings_default_profile">My name and avatar</string>
-    <string name="notifications_label">Notifications</string>
-    <string name="notifications_detail">A short “New message” alert with no sender or text</string>
-    <string name="notifications_help_title">Turn on alerts</string>
-    <string name="notifications_help_body">Alerts come from the ntfy app, not from Google. Install ntfy, then subscribe to this address. It is secret: it belongs to this chat only.</string>
-    <string name="notifications_copy">Copy address</string>
-    <string name="notifications_open">Open in ntfy</string>
-    <string name="notifications_done">Done</string>
-    <string name="notifications_privacy">The push service learns that a message arrived and when, never who sent it or what it says.</string>
-    <string name="notifications_unsupported">This relay does not support notifications yet. Update the relay, then try again.</string>
-    <string name="notifications_rejected">This relay does not allow that push service. Ask whoever runs the relay to add it, or change the push server in Settings.</string>
-    <string name="settings_push_server">Push server</string>
-    <string name="push_server_title">Push server address</string>
-    <string name="push_server_body">Notifications you turn on from now on are sent through this service. It learns that a message arrived and when. The relays you use must allow it.</string>
     <string name="chat_relays">Relays for this chat</string>
     <string name="relay_for_chat">Relay for this chat</string>
     <string name="notice_too_many">You have reached the limit of 20 chats. Forget one to add another.</string>
@@ -150,5 +181,4 @@
     <string name="erase_confirm_title">Erase everything?</string>
     <string name="erase_confirm_body">All chats on this phone are deleted. The other people keep their copy. This cannot be undone.</string>
     <string name="erase_confirm_yes">Erase</string>
-    <string name="about_not_8">Notifications: the push service you choose, and its host, learn that a message arrived and when, never what it says.</string>
 </resources>

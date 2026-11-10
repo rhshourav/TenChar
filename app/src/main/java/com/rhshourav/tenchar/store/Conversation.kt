@@ -5,7 +5,18 @@ import com.rhshourav.tenchar.crypto.RandomSource
 import com.rhshourav.tenchar.crypto.Ratchet
 import com.rhshourav.tenchar.crypto.Reassembler
 
-class StoredMessage(val id: Long, val text: String, val mine: Boolean, var delivery: Int)
+/**
+ * One message. [text] is empty when there is an [attachment]. [at] is when this phone sent or received it (milliseconds
+ * since 1970), kept only here and never sent; 0 for messages saved by an older version.
+ */
+class StoredMessage(
+    val id: Long,
+    val text: String,
+    val mine: Boolean,
+    var delivery: Int,
+    val at: Long = 0L,
+    val attachment: Attachment? = null,
+)
 
 /** An envelope that is already encrypted (the ratchet has moved on) but not yet accepted by a relay. */
 class OutboxItem(val msgId: Long, val envelope: ByteArray)
@@ -43,8 +54,11 @@ class Conversation(
     var themShared: Profile? = null,
     /** How you chose to see them on this phone. Overrides [themShared] and is never sent. */
     var themLocal: Profile? = null,
-    /** The secret address (a long random topic on the push service) that notifications for this chat arrive on, or null when they are off. */
-    var pushUrl: String? = null,
+    /**
+     * The secret that lets the alert service ask the relays how many messages wait for this chat (it opens nothing else),
+     * as 64 hex characters, or null when alerts are off. The relays only ever see its hash.
+     */
+    var watchToken: String? = null,
     /** Messages that arrived while this chat was not open. */
     var unread: Int = 0,
 ) {
@@ -56,11 +70,13 @@ class Conversation(
         ratchet.wipe()
         reassembler.wipe()
         for (item in outbox) item.envelope.fill(0)
+        for (m in messages) m.attachment?.wipe()
     }
 
     companion object {
         fun newLocalId(random: RandomSource): String = Hex.encode(ByteArray(8).also(random::nextBytes))
 
+        /** Only for reading state saved by version 4, which stored a push address here. */
         const val MAX_PUSH_URL_BYTES = 128
         const val DELIVERY_NONE = 0
         const val DELIVERY_QUEUED = 1

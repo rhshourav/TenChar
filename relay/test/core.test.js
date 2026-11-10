@@ -343,4 +343,18 @@ test("route parsing", () => {
   assert.equal(parseRoute("GET", `/v1/rooms/${"a".repeat(31)}/state`).status, 404);
   assert.equal(parseRoute("GET", `/v1/rooms/${room}/state/extra`).status, 404);
   assert.equal(parseRoute("GET", "/").status, 404);
+
+  const blob = "c".repeat(32);
+  assert.deepEqual(parseRoute("PUT", `/v1/rooms/${room}/blobs/${blob}`), { room, action: "put_blob", blob });
+  assert.deepEqual(parseRoute("GET", `/v1/rooms/${room}/blobs/${blob}`), { room, action: "get_blob", blob });
+  assert.deepEqual(parseRoute("DELETE", `/v1/rooms/${room}/blobs/${blob}`), { room, action: "delete_blob", blob });
+  assert.equal(parseRoute("POST", `/v1/rooms/${room}/blobs/${blob}`).status, 405);
+  assert.equal(parseRoute("PUT", `/v1/rooms/${room}/blobs`).status, 404); // no id
+  assert.equal(parseRoute("PUT", `/v1/rooms/${room}/blobs/${"C".repeat(32)}`).status, 404); // uppercase id
+  assert.equal(parseRoute("PUT", `/v1/rooms/${room}/blobs/${"c".repeat(31)}`).status, 404);
+  assert.equal(parseRoute("PUT", `/v1/rooms/${room}/blobs/${blob}/more`).status, 404);
+  assert.equal(parseRoute("GET", `/v1/rooms/${room}/state/${blob}`).status, 404); // an id only follows "blobs"
+  assert.deepEqual(parseRoute("POST", `/v1/rooms/${room}/watch`), { room, action: "watch" });
+  assert.deepEqual(parseRoute("GET", `/v1/rooms/${room}/peek`), { room, action: "peek" });
+  assert.equal(parseRoute("POST", `/v1/rooms/${room}/push`).status, 404); // the old push route is gone
 });

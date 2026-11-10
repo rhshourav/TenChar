@@ -28,7 +28,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -265,7 +268,7 @@ fun GlowDot(color: Color, diameter: Dp = 8.dp, modifier: Modifier = Modifier) {
 // Icons (drawn, so no icon library is needed)
 // ---------------------------------------------------------------------------
 
-enum class TcIcon { ChevronLeft, ChevronRight, ArrowUp }
+enum class TcIcon { ChevronLeft, ChevronRight, ArrowUp, Play, Pause, Mic, Plus, Close }
 
 @Composable
 fun TcIconView(icon: TcIcon, tint: Color, modifier: Modifier = Modifier.size(24.dp)) {
@@ -297,7 +300,43 @@ fun TcIconView(icon: TcIcon, tint: Color, modifier: Modifier = Modifier.size(24.
                 path.lineTo(s * 0.50f, s * 0.20f)
                 path.lineTo(s * 0.76f, s * 0.46f)
             }
+            TcIcon.Play -> {
+                path.moveTo(s * 0.34f, s * 0.20f)
+                path.lineTo(s * 0.80f, s * 0.50f)
+                path.lineTo(s * 0.34f, s * 0.80f)
+                path.close()
+            }
+            TcIcon.Pause -> {
+                path.moveTo(s * 0.35f, s * 0.22f)
+                path.lineTo(s * 0.35f, s * 0.78f)
+                path.moveTo(s * 0.65f, s * 0.22f)
+                path.lineTo(s * 0.65f, s * 0.78f)
+            }
+            TcIcon.Mic -> {
+                path.addRoundRect(RoundRect(s * 0.38f, s * 0.12f, s * 0.62f, s * 0.58f, CornerRadius(s * 0.12f)))
+                path.moveTo(s * 0.26f, s * 0.44f)
+                path.arcTo(Rect(s * 0.26f, s * 0.20f, s * 0.74f, s * 0.68f), 180f, -180f, false)
+                path.moveTo(s * 0.50f, s * 0.68f)
+                path.lineTo(s * 0.50f, s * 0.86f)
+                path.moveTo(s * 0.36f, s * 0.86f)
+                path.lineTo(s * 0.64f, s * 0.86f)
+            }
+            TcIcon.Plus -> {
+                path.moveTo(s * 0.50f, s * 0.22f)
+                path.lineTo(s * 0.50f, s * 0.78f)
+                path.moveTo(s * 0.22f, s * 0.50f)
+                path.lineTo(s * 0.78f, s * 0.50f)
+            }
+            TcIcon.Close -> {
+                path.moveTo(s * 0.26f, s * 0.26f)
+                path.lineTo(s * 0.74f, s * 0.74f)
+                path.moveTo(s * 0.74f, s * 0.26f)
+                path.lineTo(s * 0.26f, s * 0.74f)
+            }
         }
-        drawPath(path, tint, style = Stroke(width = s * 0.09f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        val width = s * 0.09f
+        // Play is a solid triangle with softened corners; every other icon is a rounded line drawing.
+        if (shown == TcIcon.Play) drawPath(path, tint)
+        drawPath(path, tint, style = Stroke(width = if (shown == TcIcon.Play) width * 0.8f else width, cap = StrokeCap.Round, join = StrokeJoin.Round))
     }
 }

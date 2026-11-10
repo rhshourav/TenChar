@@ -5,6 +5,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONException
 import org.json.JSONObject
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.net.HttpURLConnection
@@ -26,9 +29,13 @@ class RoomState(val sealed: Boolean, val members: List<RoomMember>)
 class RelayMessage(val id: Long, val env: String)
 class RelayPage(val messages: List<RelayMessage>, val more: Boolean)
 
+/** What a watch token may learn: how many messages wait, and the newest sequence number ever queued. */
+class Peek(val waiting: Int, val latest: Long)
+
 /**
  * Client for one relay (see relay/src/core.js for the protocol). HTTPS only,
- * no redirects, small responses only, no logging. Every call suspends on the IO dispatcher.
+ * no redirects, small responses only (except an attachment download, whose exact length the caller states),
+ * no logging. Every call suspends on the IO dispatcher.
  */
 class RelayClient(base: String) {
     private val origin: String = base.trimEnd('/').also {
@@ -85,11 +92,85 @@ class RelayClient(base: String) {
         call("POST", room, "/ack", token, JSONObject().put("upTo", upTo).toString()) { }
 
     /**
-     * Registers the address that gets a content-free wake-up when a message arrives for this phone, or removes it
-     * when [url] is empty. A relay that predates push answers 404 or 501.
+     * Registers the hash of this phone's watch token (SHA-256, 64 hex characters), or removes it when [tokenHash] is
+     * empty. The token itself stays on the phone. A relay that predates alerts answers 404.
      */
-    suspend fun registerPush(room: String, token: String, url: String): Reply<Boolean> =
-        call("POST", room, "/push", token, JSONObject().put("url", url).toString()) { it.optBoolean("push", false) }
+    suspend fun registerWatch(room: String, token: String, tokenHash: String): Reply<Boolean> =
+        call("POST", room, "/watch", token, JSONObject().put("tokenHash", tokenHash).toString()) { it.optBoolean("watch", false) }
+
+    /** How many messages wait for this phone. Needs only the watch token, which can read, delete and send nothing. */
+    suspend fun peek(room: String, watchToken: String): Reply<Peek> =
+        call("GET", room, "/peek", watchToken, null) { json ->
+            val waiting = json.optInt("waiting", -1)
+            val latest = json.optLong("latest", -1)
+            if (waiting < 0 || latest < 0) null else Peek(waiting, latest)
+        }
+
+    /** Uploads the encrypted attachment in [file] (already ciphertext) under [id]. Repeating it is harmless. */
+    suspend fun putBlob(room: String, token: String, id: String, file: File): Reply<Unit> = withContext(Dispatchers.IO) {
+        var conn: HttpURLConnection? = null
+        try {
+            conn = open("PUT", room, "/blobs/$id", token, TRANSFER_TIMEOUT_MS)
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/octet-stream")
+            conn.setFixedLengthStreamingMode(file.length())
+            FileInputStream(file).use { input -> conn.outputStream.use { out -> input.copyTo(out, 64 * 1024) } }
+            val status = conn.responseCode
+            if (status in 200..299) Reply.Ok(Unit) else Reply.Rejected(status, errorOf(conn))
+        } catch (e: IOException) {
+            Reply.Unreachable
+        } catch (e: RuntimeException) {
+            Reply.Unreachable
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    /**
+     * Downloads attachment [id] into [dest], which must end up exactly [expected] bytes (the length the descriptor
+     * implies). A relay that sends any other length is treated as not answering, and [dest] is deleted.
+     */
+    suspend fun getBlob(room: String, token: String, id: String, expected: Long, dest: File): Reply<Unit> =
+        withContext(Dispatchers.IO) {
+            var conn: HttpURLConnection? = null
+            try {
+                conn = open("GET", room, "/blobs/$id", token, TRANSFER_TIMEOUT_MS)
+                val status = conn.responseCode
+                if (status !in 200..299) return@withContext Reply.Rejected(status, errorOf(conn))
+                if (conn.contentLengthLong != expected) return@withContext Reply.Unreachable
+                var total = 0L
+                FileOutputStream(dest).use { out ->
+                    conn.inputStream.use { input ->
+                        val buf = ByteArray(64 * 1024)
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            total += n
+                            if (total > expected) throw IOException("longer than announced")
+                            out.write(buf, 0, n)
+                        }
+                    }
+                }
+                if (total != expected) {
+                    dest.delete()
+                    Reply.Unreachable
+                } else {
+                    Reply.Ok(Unit)
+                }
+            } catch (e: IOException) {
+                dest.delete()
+                Reply.Unreachable
+            } catch (e: RuntimeException) {
+                dest.delete()
+                Reply.Unreachable
+            } finally {
+                conn?.disconnect()
+            }
+        }
+
+    /** Tells the relay the attachment is no longer needed (downloaded, or withdrawn). */
+    suspend fun deleteBlob(room: String, token: String, id: String): Reply<Unit> =
+        call("DELETE", room, "/blobs/$id", token, null) { }
 
     suspend fun delete(room: String, token: String): Reply<Unit> = call("DELETE", room, "", token, null) { }
 
@@ -103,16 +184,8 @@ class RelayClient(base: String) {
     ): Reply<T> = withContext(Dispatchers.IO) {
         var conn: HttpURLConnection? = null
         try {
-            conn = URL("$origin/v1/rooms/$room$path").openConnection() as HttpURLConnection
-            conn.requestMethod = method
-            conn.instanceFollowRedirects = false
-            conn.useCaches = false
-            conn.connectTimeout = CONNECT_TIMEOUT_MS
             // Free hosting plans can take most of a minute to wake up.
-            conn.readTimeout = READ_TIMEOUT_MS
-            conn.setRequestProperty("Authorization", "Bearer $token")
-            conn.setRequestProperty("Accept", "application/json")
-            conn.setRequestProperty("User-Agent", Constants.USER_AGENT)
+            conn = open(method, room, path, token, READ_TIMEOUT_MS)
             if (body != null) {
                 val bytes = body.toByteArray(Charsets.UTF_8)
                 conn.doOutput = true
@@ -151,6 +224,27 @@ class RelayClient(base: String) {
         }
     }
 
+    private fun open(method: String, room: String, path: String, token: String, readTimeoutMs: Int): HttpURLConnection {
+        val conn = URL("$origin/v1/rooms/$room$path").openConnection() as HttpURLConnection
+        conn.requestMethod = method
+        conn.instanceFollowRedirects = false
+        conn.useCaches = false
+        conn.connectTimeout = CONNECT_TIMEOUT_MS
+        conn.readTimeout = readTimeoutMs
+        conn.setRequestProperty("Authorization", "Bearer $token")
+        conn.setRequestProperty("Accept", "application/json")
+        conn.setRequestProperty("User-Agent", Constants.USER_AGENT)
+        return conn
+    }
+
+    /** The relay's error code from a failed response, shortened. Never throws. */
+    private fun errorOf(conn: HttpURLConnection): String = try {
+        val text = conn.errorStream?.use { readCapped(it) } ?: ""
+        JSONObject(text).optString("error", "").take(40)
+    } catch (e: Exception) {
+        ""
+    }
+
     private fun readCapped(input: InputStream): String {
         val out = java.io.ByteArrayOutputStream()
         val buf = ByteArray(4096)
@@ -168,6 +262,9 @@ class RelayClient(base: String) {
     private companion object {
         const val CONNECT_TIMEOUT_MS = 20_000
         const val READ_TIMEOUT_MS = 45_000
+
+        /** Moving a few megabytes over a mobile link takes longer than a small request. */
+        const val TRANSFER_TIMEOUT_MS = 120_000
         const val MAX_RESPONSE_BYTES = 256 * 1024
     }
 }

@@ -13,10 +13,12 @@ There are no npm dependencies. Run the tests with `npm test` (Node 22 or newer).
 
 ## What was tested, and what was not
 
-Tested here (`npm test`, 50 tests): the protocol logic, including values checked
-against independent Python computations; the Node server over real HTTP,
-including restart persistence; and the Worker plus Durable Object code against a
-**fake** Durable Object store that enforces the 128-key delete limit.
+Tested here (`npm test`): the protocol logic, including values checked against
+independent Python computations; the Node server over real HTTP, including
+restart persistence of messages **and waiting attachments**; and the Worker plus
+Durable Object code against a **fake** Durable Object store that enforces the
+128-key delete limit and the 128 KiB value limit (a 9 MiB attachment is 144
+stored pieces, so deleting one needs more than one call).
 
 **Not tested: the real Cloudflare runtime and the real Render deployment.**
 There is no `workerd` or Cloudflare account here. Expect to find at least one
@@ -33,14 +35,18 @@ npx wrangler deploy
 
 The Worker URL (for example `https://tenchar-relay.<you>.workers.dev`) is the
 relay URL the app will use. `wrangler.toml` declares the Durable Object and its
-SQLite migration; there is nothing else to configure.
+SQLite migration; there is nothing else to configure. (`PUSH_HOSTS` is no longer
+used; remove it if you set it.)
 
 Costs and limits depend on your Cloudflare plan; check the current Workers and
 Durable Objects pricing and free-tier limits before relying on it.
 
 **Add rate limiting.** The relay has none. Without it anyone can create rooms
 until your quota runs out. Use Cloudflare's rate-limiting rules on
-`/v1/rooms/*/hello` at minimum.
+`/v1/rooms/*/hello` at minimum. Attachments make this matter more: each
+upload is up to 9 MiB written to Durable Object storage (and 64 writes of
+64 KiB pieces). Check the current Durable Objects storage and write limits for
+your plan.
 
 ## Deploy to Render
 
@@ -63,10 +69,17 @@ Environment variables:
 | `PORT` | `8787` | Render sets this itself |
 | `DATA_DIR` | unset | if set, rooms are saved there as `<room>.json` (mode 0600) and reloaded at start |
 | `MAX_ROOMS` | `10000` | new rooms are refused (`503`) beyond this |
-| `PUSH_HOSTS` | `ntfy.sh` | hosts that notifications may be sent to; `none` turns push off |
 
-Persistence rewrites a room's whole file after each change. That is fine for a
-two-person messenger and would not scale to many rooms.
+Persistence rewrites a room's small JSON file after each change. Attachment
+pieces are written once, as separate files in `DATA_DIR/<room>.blobs/`, and
+removed when the other phone deletes them, so a message never rewrites a photo.
+That is fine for a two-person messenger and would not scale to many rooms.
+
+**Memory.** Waiting attachments are also held in memory (up to 32 MiB per room,
+9 MiB each, 64 per room). A relay for a few people is fine on a small instance;
+a public one should lower `MAX_ROOMS`. Uploads may take up to two minutes
+(`server.requestTimeout`), because a phone on a slow link needs time to send
+9 MiB.
 
 ## Smoke test after deploying
 
@@ -82,28 +95,44 @@ head -c 600 /dev/zero | tr '\0' x | curl -i -X POST --data-binary @- \
 Then pair two test members using the sequence in `test/node.test.js`
 ("handshake and a message over real HTTP") as a script.
 
-## Push notifications (optional)
+## Message alerts (optional)
 
-A member can register an address that gets a short wake-up when a message is queued for them
-(`POST /v1/rooms/<room>/push` with `{"url": "https://ntfy.sh/<topic>"}`; an empty `url` removes it). The relay sends
-that address the fixed text "New message", never the sender, the room or the content, at most once per 10 seconds.
+A member can register the SHA-256 hash of a random **watch token**
+(`POST /v1/rooms/<room>/watch` with `{"tokenHash": "<64 hex>"}`; an empty
+`tokenHash` removes it). With the token itself, and nothing else, a phone can ask
+`GET /v1/rooms/<room>/peek` and get `{"waiting": n, "latest": n}`: how many
+messages wait for that member, and the newest sequence number ever queued. That
+is all it can do. It cannot read, acknowledge, delete or send, it does not keep
+the room alive, and the token is never stored (only its hash, which no call
+returns). The Android app uses this from a small foreground service to show a
+fixed "New message" alert. No third-party push service is involved, and **the
+relay never makes an outgoing request on anyone's behalf**: there is no
+`PUSH_HOSTS`, no allow-list and nothing to configure. A relay deployed before
+this change answers `404` to `/watch`, and the app says so.
 
-Because this makes the relay send requests to an address a client chose, it is locked down:
+## Attachments (photos, voice messages, short video)
 
-* only hosts on the allow-list: the `PUSH_HOSTS` environment variable (comma separated; default `ntfy.sh`;
-  `none` turns push off, and a relay with push off answers `501 push_unavailable`);
-* https only, one path segment of 16 to 64 letters, digits, `_` or `-` (a long random topic), and no credentials,
-  port, query or fragment; no redirects are followed; the request gives up after 5 seconds;
-* the registered address is never returned by any call, including `state`.
+The relay stores opaque ciphertext that one member uploads for the other. It
+never sees a key (the key travels inside the ratchet-encrypted message), a file
+name or a type.
 
-On Cloudflare set it with `wrangler secret put PUSH_HOSTS` or a `[vars]` entry in `wrangler.toml`; on Render add the
-variable in the dashboard. A relay deployed before this change answers `404` to `/push`, and the app says so.
-Redeploy both relays to enable notifications.
+| Call | Who | Result |
+|---|---|---|
+| `PUT /v1/rooms/<room>/blobs/<id>` (raw bytes) | a member | `201`; `200` if the same upload is repeated; `409 conflict` for a different upload under that id |
+| `GET /v1/rooms/<room>/blobs/<id>` | the **recipient** only | the bytes (`404` for anyone else, including the uploader) |
+| `DELETE /v1/rooms/<room>/blobs/<id>` | either member | `204` |
+
+`<id>` is 32 lowercase hex characters, derived from the key by the sender. Limits:
+9 MiB per attachment (`413 too_large`), 64 waiting and 32 MiB in total per room
+(`429 blob_quota`); an attachment not picked up within 7 days is deleted. The
+exact format of the encrypted file is documented in `BlobCrypto.kt` and
+cross-checked against an independent Python implementation.
 
 ## Privacy
 
 The relay stores token hashes, public keys, commits, ciphertext envelopes,
-timestamps and, if a member turned notifications on, their push address (see the API document). It never logs requests, addresses, room ids
+ciphertext attachments (with their size and arrival time) and, if a member turned
+alerts on, the hash of a watch token. It never logs requests, addresses, room ids
 or tokens. The only log lines are the listening port at startup and a warning
 when `DATA_DIR` is unset. The host still sees IP
 addresses and timing, and Cloudflare or Render keep their own logs that this

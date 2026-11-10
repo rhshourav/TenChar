@@ -19,6 +19,8 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.rhshourav.tenchar.notify.AppVisibility
+import com.rhshourav.tenchar.notify.Notifier
 import com.rhshourav.tenchar.store.Authenticator
 import com.rhshourav.tenchar.ui.AppViewModel
 import com.rhshourav.tenchar.ui.AutoLock
@@ -34,9 +36,14 @@ class MainActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private val lockWhenIdle = Runnable { vm.lock() }
 
+    /** The unlock prompt is shown once per start, when the window first has focus. */
+    private var promptOnFocus = false
+    private var promptSignal: CancellationSignal? = null
+
     /**
-     * The system unlock prompt (fingerprint, face or screen lock), bound to a Keystore cipher:
-     * the key cannot be used at all unless this prompt succeeds, for each use.
+     * The system unlock prompt (fingerprint, face or screen lock). The Keystore key it opens is valid for a few
+     * seconds afterwards (see Vault), so a plain prompt is enough. Only a vault from an earlier version passes a
+     * [cipher], which then has to be used through the prompt itself.
      */
     private val authenticator = Authenticator { cipher, onSuccess, onFailure ->
         val prompt = BiometricPrompt.Builder(this)
@@ -46,21 +53,29 @@ class MainActivity : ComponentActivity() {
                 BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL,
             )
             .build()
-        prompt.authenticate(
-            BiometricPrompt.CryptoObject(cipher),
-            CancellationSignal(),
-            mainExecutor,
-            object : BiometricPrompt.AuthenticationCallback() {
-                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+        val signal = CancellationSignal()
+        promptSignal = signal
+        val callback = object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                promptSignal = null
+                if (cipher == null) {
+                    onSuccess(null)
+                } else {
                     val authed: Cipher? = result.cryptoObject?.cipher
                     if (authed != null) onSuccess(authed) else onFailure(false)
                 }
+            }
 
-                override fun onAuthenticationError(errorCode: Int, errString: CharSequence?) {
-                    onFailure(errorCode == ERROR_CANCELED || errorCode == ERROR_USER_CANCELED)
-                }
-            },
-        )
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence?) {
+                promptSignal = null
+                onFailure(errorCode == ERROR_CANCELED || errorCode == ERROR_USER_CANCELED)
+            }
+        }
+        if (cipher == null) {
+            prompt.authenticate(signal, mainExecutor, callback)
+        } else {
+            prompt.authenticate(BiometricPrompt.CryptoObject(cipher), signal, mainExecutor, callback)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -95,16 +110,33 @@ class MainActivity : ComponentActivity() {
             vm.lock()
         }
         stoppedAt = NOT_STOPPED
+        AppVisibility.foreground = true
+        Notifier.cancelMessageAlert(this)
         vm.setForeground(true)
-        // Back at the gate (first run after setup, or after a lock): ask straight away.
-        if (deviceSecure && vm.screen == Screen.Gate) vm.unlock(authenticator)
+        // Back at the gate (first run after setup, or after a lock): ask as soon as the window has focus. Asking
+        // from onStart, before focus, makes some under-display fingerprint sensors cancel the prompt at once.
+        promptOnFocus = true
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // Only the first focus after a start: when the prompt closes, focus returns here, and asking again would
+        // trap someone who just cancelled.
+        if (hasFocus && promptOnFocus) {
+            promptOnFocus = false
+            if (deviceSecure && vm.screen == Screen.Gate) vm.unlock(authenticator)
+        }
     }
 
     override fun onStop() {
         super.onStop()
         // A rotation stops and restarts the activity; that is not leaving the app.
         if (isChangingConfigurations) return
-        // Nothing talks to a relay while the app is out of sight.
+        promptOnFocus = false
+        promptSignal?.cancel()
+        promptSignal = null
+        // Nothing talks to a relay while the app is out of sight (the alert service only asks how many messages wait).
+        AppVisibility.foreground = false
         vm.setForeground(false)
         if (vm.autoLock == AutoLock.Immediately) {
             vm.lock()

@@ -1,12 +1,18 @@
 package com.rhshourav.tenchar.ui
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.PersistableBundle
+import android.text.format.DateUtils
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -44,7 +50,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -572,6 +579,9 @@ private fun ChatScreen(vm: AppViewModel) {
     // back to an old one does not replay it.
     val seen = remember { HashSet<Long>() }
     val chat = vm.current
+    var viewing by remember { mutableStateOf<ChatMessage?>(null) }
+    // Closing the viewer when the chat changes or locks keeps decrypted media from outliving its screen.
+    LaunchedEffect(vm.currentId) { viewing = null }
     TenCharScreen(
         title = if (chat != null) chatName(chat, vm.chats.indexOf(chat)) else stringResource(R.string.chat_title),
         onBack = vm::back,
@@ -591,19 +601,66 @@ private fun ChatScreen(vm: AppViewModel) {
                 BodyText(stringResource(R.string.chat_empty), center = true)
             }
         } else {
+            val lastMineId = remember(vm.messages.size) { vm.messages.lastOrNull { it.mine }?.id }
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 state = listState,
                 contentPadding = PaddingValues(vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(vm.messages, key = { it.id }) { message ->
+                itemsIndexed(vm.messages, key = { _, m -> m.id }) { index, message ->
+                    val previous = vm.messages.getOrNull(index - 1)
+                    val next = vm.messages.getOrNull(index + 1)
                     val animateIn = remember(message.id) { seen.add(message.id) }
-                    MessageRow(message, animateIn)
+                    // The time shows under the last bubble of a run from one person, not under every bubble.
+                    val endOfRun = next == null || next.mine != message.mine || message.at == 0L || next.at - message.at > RUN_GAP_MS
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (message.at > 0L && (previous == null || previous.at == 0L || !isSameDay(previous.at, message.at))) {
+                            DayChip(message.at)
+                        }
+                        MessageRow(
+                            vm = vm,
+                            message = message,
+                            animateIn = animateIn,
+                            showTime = endOfRun,
+                            showSent = message.id == lastMineId,
+                            onOpenMedia = { viewing = it },
+                        )
+                    }
                 }
             }
         }
+        vm.mediaNotice?.let { MediaNoticeBanner(it, vm::dismissMediaNotice) }
+        if (vm.mediaBusy) PreparingBar()
         Composer(vm)
+    }
+    viewing?.let { MediaViewer(vm, it) { viewing = null } }
+}
+
+/** Messages from one person closer together than this share one time label. */
+private const val RUN_GAP_MS = 2 * 60 * 1000L
+
+private fun isSameDay(a: Long, b: Long): Boolean {
+    val day = DateUtils.DAY_IN_MILLIS
+    val zone = java.util.TimeZone.getDefault()
+    return (a + zone.getOffset(a)) / day == (b + zone.getOffset(b)) / day
+}
+
+@Composable
+private fun DayChip(at: Long) {
+    val context = LocalContext.current
+    val text = when {
+        DateUtils.isToday(at) -> stringResource(R.string.day_today)
+        DateUtils.isToday(at + DateUtils.DAY_IN_MILLIS) -> stringResource(R.string.day_yesterday)
+        else -> DateUtils.formatDateTime(context, at, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_MONTH or DateUtils.FORMAT_SHOW_WEEKDAY or DateUtils.FORMAT_ABBREV_WEEKDAY)
+    }
+    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = Tc.InkMuted,
+            modifier = Modifier.glass(CircleShape).padding(horizontal = 14.dp, vertical = 6.dp),
+        )
     }
 }
 
@@ -629,21 +686,33 @@ private fun ConnectionBanner(connection: Connection) {
 }
 
 @Composable
-private fun MessageRow(message: ChatMessage, animateIn: Boolean) {
+private fun MessageRow(
+    vm: AppViewModel,
+    message: ChatMessage,
+    animateIn: Boolean,
+    showTime: Boolean,
+    showSent: Boolean,
+    onOpenMedia: (ChatMessage) -> Unit,
+) {
+    val context = LocalContext.current
     val reduceMotion = LocalReduceMotion.current
     val enter = remember { Animatable(if (animateIn && !reduceMotion) 0f else 1f) }
     LaunchedEffect(Unit) {
         if (enter.value < 1f) enter.animateTo(1f, spring(dampingRatio = 0.62f, stiffness = 380f))
     }
+    val attachment = message.attachment
+    // "Queued" is always worth saying. "Sent" only under your latest message, so a long run of bubbles stays quiet.
     val deliveryText = when (message.delivery) {
         Delivery.Queued -> stringResource(R.string.delivery_queued)
-        Delivery.Sent -> stringResource(R.string.delivery_sent)
+        Delivery.Sent -> if (showSent) stringResource(R.string.delivery_sent) else null
         null -> null
     }
+    val timeText = if (showTime && message.at > 0L) DateUtils.formatDateTime(context, message.at, DateUtils.FORMAT_SHOW_TIME) else null
+    val content = attachment?.let { attachmentLabel(it) } ?: message.text
     val spoken = stringResource(
         if (message.mine) R.string.msg_from_you else R.string.msg_from_them,
-        message.text,
-    ) + (deliveryText?.let { ", $it" } ?: "")
+        content,
+    ) + (timeText?.let { ", $it" } ?: "") + (deliveryText?.let { ", $it" } ?: "")
     val shape = RoundedCornerShape(
         topStart = 22.dp,
         topEnd = 22.dp,
@@ -671,23 +740,35 @@ private fun MessageRow(message: ChatMessage, animateIn: Boolean) {
             .semantics(mergeDescendants = true) { contentDescription = spoken },
         horizontalAlignment = if (message.mine) Alignment.End else Alignment.Start,
     ) {
-        Box(Modifier.widthIn(max = 300.dp).glass(shape, tint)) {
-            Text(
-                text = message.text,
-                // Short messages stay large; a paragraph at that size would fill the screen.
-                style = (if (message.text.length <= 24) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge)
-                    .copy(fontWeight = FontWeight.Medium),
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
-            )
+        if (attachment != null) {
+            // A photo or video sits in the bubble with a small margin; a voice message brings its own padding.
+            val inset = if (attachment.kind == Constants.KIND_VOICE) 0.dp else 4.dp
+            Box(Modifier.glass(shape, tint).padding(inset)) {
+                AttachmentContent(vm, message, onOpenMedia)
+            }
+        } else {
+            Box(Modifier.widthIn(max = 300.dp).glass(shape, tint)) {
+                Text(
+                    text = message.text,
+                    // Short messages stay large; a paragraph at that size would fill the screen.
+                    style = (if (message.text.length <= 24) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge)
+                        .copy(fontWeight = FontWeight.Medium),
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                )
+            }
         }
-        if (deliveryText != null) {
+        if (timeText != null || deliveryText != null) {
             Row(
                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                GlowDot(if (message.delivery == Delivery.Sent) Tc.Mint else Tc.Peach, 6.dp)
-                Spacer(Modifier.width(8.dp))
-                Text(deliveryText, style = MaterialTheme.typography.labelSmall, color = Tc.InkMuted)
+                if (timeText != null) Text(timeText, style = MaterialTheme.typography.labelSmall, color = Tc.InkMuted)
+                if (timeText != null && deliveryText != null) Spacer(Modifier.width(8.dp))
+                if (deliveryText != null) {
+                    GlowDot(if (message.delivery == Delivery.Sent) Tc.Mint else Tc.Peach, 6.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(deliveryText, style = MaterialTheme.typography.labelSmall, color = Tc.InkMuted)
+                }
             }
         }
     }
@@ -696,6 +777,7 @@ private fun MessageRow(message: ChatMessage, animateIn: Boolean) {
 @Composable
 private fun Composer(vm: AppViewModel) {
     val view = LocalView.current
+    val context = LocalContext.current
     val reduceMotion = LocalReduceMotion.current
     val scope = rememberCoroutineScope()
     val shake = remember { Animatable(0f) }
@@ -710,6 +792,22 @@ private fun Composer(vm: AppViewModel) {
     }
     val showByteHint = byteLimitHit && vm.draft.isNotEmpty()
     val atLimit = count >= Constants.MAX_CHARS || showByteHint
+
+    // The system photo picker needs no storage permission: the app only ever sees what the person picks.
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) vm.attachPicked(uri)
+    }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) vm.startRecording() else vm.micDenied()
+    }
+    fun startVoice() {
+        view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            vm.startRecording()
+        } else {
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
 
     fun send() {
         if (!canSend) return
@@ -727,51 +825,70 @@ private fun Composer(vm: AppViewModel) {
                 .padding(start = 4.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextField(
-                value = vm.draft,
-                onValueChange = { raw ->
-                    if (!MessageLimits.fitsDraft(raw)) {
-                        // Under the character limit but still refused: the byte limit is what bound.
-                        byteLimitHit = MessageLimits.graphemeCount(raw) <= Constants.MAX_DRAFT_CHARS
-                        // The box is full: the text is cut, so say so with a nudge.
-                        view.performHapticFeedback(HapticFeedbackConstants.REJECT)
-                        if (!reduceMotion) {
-                            scope.launch {
-                                shake.snapTo(0f)
-                                shake.animateTo(
-                                    0f,
-                                    keyframes {
-                                        durationMillis = 300
-                                        -9f at 50
-                                        7f at 110
-                                        -4f at 180
-                                        2f at 240
-                                    },
-                                )
-                            }
+            if (vm.recording) {
+                RecordingRow(vm, Modifier.weight(1f))
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .glassClickable(!vm.mediaBusy, Role.Button) {
+                            picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
                         }
-                    } else {
-                        byteLimitHit = false
-                    }
-                    vm.onDraft(raw)
-                },
-                modifier = Modifier.weight(1f),
-                // Up to 500 characters in a message: let the field grow to a few lines instead of scrolling sideways.
-                singleLine = false,
-                maxLines = 4,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Normal),
-                placeholder = { Text(stringResource(R.string.chat_input_hint), style = MaterialTheme.typography.bodyLarge) },
-                colors = tcFieldColors(),
-                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { send() }),
-            )
-            Text(
-                text = stringResource(R.string.chat_counter, count, Constants.MAX_CHARS),
-                style = MaterialTheme.typography.labelMedium,
-                color = if (atLimit) Tc.PeachText else Tc.InkMuted,
-                modifier = Modifier.padding(horizontal = 8.dp),
-            )
-            SendButton(fraction = fraction, enabled = canSend, label = stringResource(R.string.chat_send), onClick = ::send)
+                        .semantics { contentDescription = context.getString(R.string.media_attach) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    TcIconView(TcIcon.Plus, if (vm.mediaBusy) Tc.InkFaint else Tc.Ink, Modifier.size(24.dp))
+                }
+                TextField(
+                    value = vm.draft,
+                    onValueChange = { raw ->
+                        if (!MessageLimits.fitsDraft(raw)) {
+                            // Under the character limit but still refused: the byte limit is what bound.
+                            byteLimitHit = MessageLimits.graphemeCount(raw) <= Constants.MAX_DRAFT_CHARS
+                            // The box is full: the text is cut, so say so with a nudge.
+                            view.performHapticFeedback(HapticFeedbackConstants.REJECT)
+                            if (!reduceMotion) {
+                                scope.launch {
+                                    shake.snapTo(0f)
+                                    shake.animateTo(
+                                        0f,
+                                        keyframes {
+                                            durationMillis = 300
+                                            -9f at 50
+                                            7f at 110
+                                            -4f at 180
+                                            2f at 240
+                                        },
+                                    )
+                                }
+                            }
+                        } else {
+                            byteLimitHit = false
+                        }
+                        vm.onDraft(raw)
+                    },
+                    modifier = Modifier.weight(1f),
+                    // Up to 500 characters in a message: let the field grow to a few lines instead of scrolling sideways.
+                    singleLine = false,
+                    maxLines = 4,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Normal),
+                    placeholder = { Text(stringResource(R.string.chat_input_hint), style = MaterialTheme.typography.bodyLarge) },
+                    colors = tcFieldColors(),
+                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { send() }),
+                )
+                if (canSend) {
+                    Text(
+                        text = stringResource(R.string.chat_counter, count, Constants.MAX_CHARS),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (atLimit) Tc.PeachText else Tc.InkMuted,
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    )
+                    SendButton(fraction = fraction, enabled = true, label = stringResource(R.string.chat_send), onClick = ::send)
+                } else {
+                    MicButton(enabled = !vm.mediaBusy, label = stringResource(R.string.media_record), onClick = ::startVoice)
+                }
+            }
         }
         val hint = when {
             showByteHint -> stringResource(R.string.chat_limit_bytes)
@@ -788,6 +905,27 @@ private fun Composer(vm: AppViewModel) {
                     .padding(bottom = 8.dp)
                     .semantics { liveRegion = LiveRegionMode.Polite },
             )
+        }
+    }
+}
+
+/** Where the send button sits while the message box is empty: tap to start a voice message. */
+@Composable
+private fun MicButton(enabled: Boolean, label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(52.dp)
+            .glassClickable(enabled, Role.Button, onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier
+                .size(38.dp)
+                .background(if (enabled) Tc.Brand else SolidColor(Color.White.copy(alpha = 0.10f)), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            TcIconView(TcIcon.Mic, if (enabled) Tc.Space else Tc.InkFaint, Modifier.size(22.dp))
         }
     }
 }
@@ -951,7 +1089,7 @@ internal fun AutoLockCard(vm: AppViewModel) {
 }
 
 @Composable
-private fun LockOptionRow(selected: Boolean, label: String, onSelect: () -> Unit) {
+internal fun LockOptionRow(selected: Boolean, label: String, onSelect: () -> Unit) {
     val tick = rememberTick()
     Row(
         modifier = Modifier
