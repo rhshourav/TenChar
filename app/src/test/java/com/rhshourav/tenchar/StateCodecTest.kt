@@ -6,6 +6,7 @@ import com.rhshourav.tenchar.crypto.LocalMember
 import com.rhshourav.tenchar.crypto.Ratchet
 import com.rhshourav.tenchar.crypto.Wire
 import com.rhshourav.tenchar.store.AppState
+import com.rhshourav.tenchar.store.Attachment
 import com.rhshourav.tenchar.store.Conversation
 import com.rhshourav.tenchar.store.Profile
 import com.rhshourav.tenchar.store.OutboxItem
@@ -187,9 +188,9 @@ class StateCodecTest {
     @Test
     fun theNewestVersionIsWrittenAndUnknownOnesAreRefused() {
         val bytes = enc(sample().first)
-        assertEquals(4, bytes[4].toInt()) // magic (4 bytes), then the version
-        // 0 is not a version, and 5 and above are from a newer app than this one.
-        for (version in listOf(0, 5, 6, 255)) {
+        assertEquals(5, bytes[4].toInt()) // magic (4 bytes), then the version
+        // 0 is not a version, and 6 and above are from a newer app than this one.
+        for (version in listOf(0, 6, 7, 255)) {
             try {
                 dec(bytes.copyOf().also { it[4] = version.toByte() })
                 assertTrue("accepted version $version", false)
@@ -201,13 +202,13 @@ class StateCodecTest {
     // ---- several chats, profiles, notifications -------------------------------------------------------
 
     @Test
-    fun severalChatsKeepTheirOwnProfilesTopicsAndCounts() {
+    fun severalChatsKeepTheirOwnProfilesWatchTokensAndCounts() {
         val (one, _) = sample()
         val (two, _) = sample()
         one.me = Profile.of("Rafi", "🦊", 3)
         one.themShared = Profile.of("Nadia", "🌸", 5)
         one.themLocal = Profile.of("Nadia (work)", "", 1)
-        one.pushUrl = "abcdefghijklmnopqrstuvwxyz012345"
+        one.watchToken = "ab".repeat(32) // 64 hex characters: it is stored as 32 bytes
         one.unread = 7
         two.me = Profile.of("R", "", 0)
         val state = AppState(mutableListOf(one, two), Profile.of("Default me", "😀", 2))
@@ -223,11 +224,67 @@ class StateCodecTest {
         assertEquals(Profile.of("Nadia", "🌸", 5), a.themShared)
         assertEquals(Profile.of("Nadia (work)", "", 1), a.themLocal)
         assertEquals("Nadia (work)", a.them.name) // your own label wins over what they shared
-        assertEquals("abcdefghijklmnopqrstuvwxyz012345", a.pushUrl)
+        assertEquals("ab".repeat(32), a.watchToken)
         assertEquals(7, a.unread)
-        assertNull(b.themShared); assertNull(b.themLocal); assertNull(b.pushUrl)
+        assertNull(b.themShared); assertNull(b.themLocal); assertNull(b.watchToken)
         assertEquals(0, b.unread)
         assertEquals(Profile.EMPTY, b.them)
+    }
+
+    // ---- times and attachments (state version 5) ------------------------------------------------------
+
+    @Test
+    fun messagesKeepTheirTimeAndAttachments() {
+        val (c, _) = sample()
+        val key = ByteArray(32) { (it + 7).toByte() }
+        val wave = ByteArray(Constants.WAVE_BYTES) { (it * 3).toByte() }
+        c.messages.add(StoredMessage(3, "", true, Conversation.DELIVERY_QUEUED, 1_800_000_000_123L,
+            Attachment(Constants.KIND_IMAGE, key, 183_000, 1280, 960, 0, ByteArray(0), Attachment.PENDING)))
+        c.messages.add(StoredMessage(4, "", false, Conversation.DELIVERY_NONE, 1_800_000_000_456L,
+            Attachment(Constants.KIND_VOICE, key.copyOf(), 90_000, 0, 0, 431, wave, Attachment.READY)))
+        c.messages.add(StoredMessage(5, "plain", true, Conversation.DELIVERY_SENT, 1_800_000_000_789L))
+        val back = dec(enc(c)).conversations.single().messages
+        val photo = back[2].attachment!!
+        assertEquals(Constants.KIND_IMAGE, photo.kind)
+        assertEquals(183_000, photo.size)
+        assertEquals(1280, photo.width)
+        assertEquals(960, photo.height)
+        assertEquals(Attachment.PENDING, photo.state)
+        assertTrue(key.contentEquals(photo.key))
+        assertEquals(1_800_000_000_123L, back[2].at)
+        val voice = back[3].attachment!!
+        assertEquals(431, voice.durationDs)
+        assertTrue(wave.contentEquals(voice.wave))
+        assertEquals(Attachment.READY, voice.state)
+        // A text message after them is untouched, and the earlier two messages (no time, no attachment) still read back.
+        assertEquals("plain", back[4].text)
+        assertNull(back[4].attachment)
+        assertEquals(1_800_000_000_789L, back[4].at)
+        assertNull(back[0].attachment)
+        // The file name on the relay and on this phone comes from the key, so it is the same after a restart.
+        assertEquals(photo.id, Attachment(Constants.KIND_IMAGE, key, 1, 1, 1, 0, ByteArray(0), 0).id)
+    }
+
+    @Test
+    fun aDamagedAttachmentRecordIsRefusedNotHalfRead() {
+        val key = ByteArray(32) { 1 }
+        fun encodedWith(att: Attachment): ByteArray {
+            val (c, _) = sample()
+            c.messages.add(StoredMessage(3, "", true, Conversation.DELIVERY_QUEUED, 5L, att))
+            return enc(c)
+        }
+        // The encoder writes what it is given; the decoder is the one that refuses what could never be real.
+        val bad = listOf(
+            Attachment(9, key, 100, 10, 10, 0, ByteArray(0), 0), // unknown kind
+            Attachment(Constants.KIND_IMAGE, key, 0, 10, 10, 0, ByteArray(0), 0), // no content
+            Attachment(Constants.KIND_IMAGE, key, Constants.MAX_MEDIA_BYTES + 1, 10, 10, 0, ByteArray(0), 0), // over the cap
+            Attachment(Constants.KIND_VOICE, key, 100, 0, 0, 5, ByteArray(7), 0), // a waveform of the wrong size
+            Attachment(Constants.KIND_IMAGE, key, 100, 10, 10, 0, ByteArray(0), 3), // an unknown state
+        )
+        for (att in bad) {
+            try { dec(encodedWith(att)); assertTrue("accepted $att", false) } catch (e: IOException) {}
+        }
+        assertNotNull(dec(encodedWith(Attachment(Constants.KIND_IMAGE, key, 100, 10, 10, 0, ByteArray(0), Attachment.READY))))
     }
 
     @Test

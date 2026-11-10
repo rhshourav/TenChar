@@ -52,6 +52,7 @@ class LongMessageTest {
                 is Wire.Decoded.Text -> d.text
                 is Wire.Decoded.Fragment -> reassembler.accept(d)
                 is Wire.Decoded.ProfileUpdate -> null // not a message
+                is Wire.Decoded.AttachmentDescriptor -> null // a photo, voice message or video: shown by its own path, not as text
                 null -> null
             }
         }
@@ -130,6 +131,26 @@ class LongMessageTest {
         val first = send(p.a, "a".repeat(300), 1)
         val second = send(p.a, "after", 2)
         val shown = receive(p.b, Reassembler(), first.filterIndexed { i, _ -> i != 2 } + second)
+        assertEquals(listOf("after"), shown)
+    }
+
+    @Test
+    fun anAttachmentDescriptorTravelsThroughTheRatchetAndIsNotShownAsText() {
+        val p = pair()
+        val key = ByteArray(32) { (it + 1).toByte() }
+        val descriptor = Wire.encodeAttachment(Constants.KIND_IMAGE, key, 183_000, 1280, 960, 0, ByteArray(0))!!
+        val text = Wire.encodeText("after")!!
+        val envelopes = listOf(p.a.encrypt(descriptor), p.a.encrypt(text))
+        assertTrue(envelopes.all { it.size == 135 }) // an attachment looks exactly like any other message on the wire
+
+        val decoded = Wire.decodeFrame(p.b.decrypt(envelopes[0])!!) as Wire.Decoded.AttachmentDescriptor
+        assertEquals(Constants.KIND_IMAGE, decoded.kind)
+        assertEquals(183_000, decoded.size)
+        assertTrue(key.contentEquals(decoded.key))
+
+        // As far as the text path is concerned it is not a message, and the next real one is unaffected.
+        val q = pair()
+        val shown = receive(q.b, Reassembler(), listOf(q.a.encrypt(descriptor), q.a.encrypt(text)))
         assertEquals(listOf("after"), shown)
     }
 
