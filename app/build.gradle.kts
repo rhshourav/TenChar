@@ -62,6 +62,12 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.tink.android)
 
+    // Short-video transcoding (media/VideoTranscoder.kt). The only dependency the attachment feature adds.
+    // media3-transformer exposes the other two, but the code imports from all three, so they are explicit.
+    implementation(libs.androidx.media3.common)
+    implementation(libs.androidx.media3.effect)
+    implementation(libs.androidx.media3.transformer)
+
     testImplementation(libs.junit)
     testImplementation(libs.json)
 }
