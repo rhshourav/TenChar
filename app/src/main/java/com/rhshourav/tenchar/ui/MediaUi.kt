@@ -402,10 +402,10 @@ internal fun RecordingRow(vm: AppViewModel, modifier: Modifier = Modifier) {
         Spacer(Modifier.width(12.dp))
         Box(Modifier.size(10.dp).graphicsLayer { alpha = pulse.value }.background(Tc.Peach, CircleShape))
         Spacer(Modifier.width(8.dp))
+        // Not a live region: a timer that changes every moment must not be read out every moment.
         Text(
             text = formatDs(vm.recordMs / 100),
             style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Off },
         )
         Canvas(
             Modifier
