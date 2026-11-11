@@ -86,6 +86,7 @@
     <string name="media_pause">Pause</string>
     <string name="media_close">Close</string>
     <string name="media_retry">Could not load. Tap to try again.</string>
+    <string name="media_retry_send">Could not send. Tap to try again.</string>
     <string name="media_retry_short">Retry</string>
     <string name="media_unavailable">Unavailable</string>
     <string name="media_notice_too_long">Videos can be up to 30 seconds. Trim it in your gallery and try again.</string>
@@ -94,6 +95,7 @@
     <string name="media_notice_unsupported">That file cannot be sent. Try a photo or a video.</string>
     <string name="media_notice_failed">Could not prepare that. Try again.</string>
     <string name="media_notice_mic_busy">The microphone is not available right now.</string>
+    <string name="media_notice_relay">Your relay cannot carry photos, voice messages or video yet (it needs the updated relay), or it no longer has this chat. Update the relay, then tap the message to try again.</string>
     <string name="media_notice_mic_denied">Allow the microphone in system settings to record voice messages.</string>
 
     <string name="settings_title">Settings</string>

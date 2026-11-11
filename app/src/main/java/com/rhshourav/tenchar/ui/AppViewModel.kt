@@ -86,7 +86,7 @@ enum class AlertInterval(val seconds: Int) {
 }
 
 /** Why a photo, voice message or video was not sent. */
-enum class MediaNotice { TooLong, TooBig, TooShort, Unsupported, Failed, MicBusy, MicDenied }
+enum class MediaNotice { TooLong, TooBig, TooShort, Unsupported, Failed, MicBusy, MicDenied, RelayOutdated }
 
 /** What the screens know about an attachment. The key and the content stay in the store. [state] is an [Attachment] state. */
 class AttachmentUi(
@@ -1268,8 +1268,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             if (accepted) break
         }
         if (!accepted) {
-            if (refused || missing == conv.endpoints.size) {
+            // Say why, not just "failed": the two causes need different fixes.
+            if (refused) {
                 setAttachmentState(conv, state, m.id, att, Attachment.FAILED)
+                if (conv.localId == currentId) mediaNotice = MediaNotice.TooBig
+                return true
+            }
+            if (missing == conv.endpoints.size) {
+                setAttachmentState(conv, state, m.id, att, Attachment.FAILED)
+                if (conv.localId == currentId) mediaNotice = MediaNotice.RelayOutdated
                 return true
             }
             return false

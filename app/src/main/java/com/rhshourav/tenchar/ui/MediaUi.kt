@@ -137,7 +137,8 @@ private fun PictureContent(vm: AppViewModel, message: ChatMessage, att: Attachme
         }
         when {
             att.state == Attachment.PENDING -> CircularProgressIndicator(Modifier.size(30.dp), color = Tc.Mint, strokeWidth = 3.dp)
-            att.state == Attachment.FAILED -> CaptionOnPicture(stringResource(R.string.media_retry))
+            att.state == Attachment.FAILED ->
+                CaptionOnPicture(stringResource(if (message.mine) R.string.media_retry_send else R.string.media_retry))
             loaded.second && bitmap == null && !isVideo -> CaptionOnPicture(stringResource(R.string.media_unavailable))
             isVideo -> {
                 Box(Modifier.size(52.dp).background(Color.Black.copy(alpha = 0.45f), CircleShape), contentAlignment = Alignment.Center) {
@@ -481,6 +482,7 @@ internal fun MediaNoticeBanner(notice: MediaNotice, onDismiss: () -> Unit) {
                         MediaNotice.Failed -> R.string.media_notice_failed
                         MediaNotice.MicBusy -> R.string.media_notice_mic_busy
                         MediaNotice.MicDenied -> R.string.media_notice_mic_denied
+                        MediaNotice.RelayOutdated -> R.string.media_notice_relay
                     },
                 ),
                 style = MaterialTheme.typography.labelMedium,

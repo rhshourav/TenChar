@@ -149,6 +149,7 @@
     <string name="media_pause">থামান</string>
     <string name="media_close">বন্ধ করুন</string>
     <string name="media_retry">লোড করা যায়নি। আবার চেষ্টা করতে ট্যাপ করুন।</string>
+    <string name="media_retry_send">পাঠানো যায়নি। আবার চেষ্টা করতে ট্যাপ করুন।</string>
     <string name="media_retry_short">আবার</string>
     <string name="media_unavailable">পাওয়া যাচ্ছে না</string>
     <string name="media_notice_too_long">ভিডিও সর্বোচ্চ ৩০ সেকেন্ডের হতে পারে। গ্যালারিতে ছোট করে আবার চেষ্টা করুন।</string>
@@ -157,6 +158,7 @@
     <string name="media_notice_unsupported">এই ফাইল পাঠানো যাবে না। একটি ছবি বা ভিডিও চেষ্টা করুন।</string>
     <string name="media_notice_failed">এটি তৈরি করা যায়নি। আবার চেষ্টা করুন।</string>
     <string name="media_notice_mic_busy">মাইক্রোফোন এখন ব্যবহার করা যাচ্ছে না।</string>
+    <string name="media_notice_relay">আপনার রিলে এখনো ছবি, ভয়েস বার্তা বা ভিডিও বহন করতে পারে না (আপডেট করা রিলে লাগবে), অথবা এই চ্যাট আর রিলেতে নেই। রিলে আপডেট করে বার্তায় ট্যাপ করে আবার চেষ্টা করুন।</string>
     <string name="media_notice_mic_denied">ভয়েস বার্তা রেকর্ড করতে সিস্টেম সেটিংসে মাইক্রোফোনের অনুমতি দিন।</string>
 
     <string name="settings_section_alerts">সতর্কবার্তা</string>
