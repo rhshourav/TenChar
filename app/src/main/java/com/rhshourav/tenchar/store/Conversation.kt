@@ -16,6 +16,8 @@ class StoredMessage(
     var delivery: Int,
     val at: Long = 0L,
     val attachment: Attachment? = null,
+    /** Set if this message answers an earlier one. */
+    val reply: ReplyRef? = null,
 )
 
 /** An envelope that is already encrypted (the ratchet has moved on) but not yet accepted by a relay. */

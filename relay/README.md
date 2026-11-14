@@ -69,6 +69,9 @@ Environment variables:
 | `PORT` | `8787` | Render sets this itself |
 | `DATA_DIR` | unset | if set, rooms are saved there as `<room>.json` (mode 0600) and reloaded at start |
 | `MAX_ROOMS` | `10000` | new rooms are refused (`503`) beyond this |
+| `MAX_BLOB_MEMORY_MB` | `96` | all waiting attachments together; an upload that would not fit is refused (`503`, "try again") |
+| `MAX_UPLOADS` | `4` | attachment uploads read into memory at the same time; more are refused (`503`) |
+| `KEEP_ALIVE_SECONDS` | `120` | how long an idle connection stays open (see "Running well on Render") |
 
 Persistence rewrites a room's small JSON file after each change. Attachment
 pieces are written once, as separate files in `DATA_DIR/<room>.blobs/`, and
@@ -81,6 +84,32 @@ a public one should lower `MAX_ROOMS`. Uploads may take up to two minutes
 (`server.requestTimeout`), because a phone on a slow link needs time to send
 9 MiB.
 
+## Running well on Render
+
+What Render's own documentation says about the **free** plan (check it again before relying on any of this): a free
+web service spins down after 15 minutes without inbound traffic and takes about a minute to wake; its filesystem is
+wiped on every restart, redeploy and spin-down, and Render may restart it at any time; a workspace gets 750 free
+instance hours a month. A paid plan does not spin down and can have a persistent disk (set `DATA_DIR` to its mount path).
+
+What this relay does about it:
+
+* **Connections.** Render's proxy reuses connections to your service. Node's default of closing an idle one after 5
+  seconds can race with that and produce an occasional `502`. The keep-alive timeout is 120 s (Render's recommendation),
+  the headers timeout 5 s longer, the request timeout longer still. This cuts sporadic 502s; it cannot promise none.
+* **Memory.** A free instance has little RAM (about 512 MB; see Render's plan table), and a process the host kills for
+  using too much loses every room. Waiting attachments are capped at `MAX_BLOB_MEMORY_MB` in total and `MAX_UPLOADS` at
+  once; past that the relay answers `503` and the phone tries again later. Lower `MAX_ROOMS` too (a few hundred is
+  plenty for a handful of people).
+* **Waking up.** The app asks `GET /v1/health` as soon as it unlocks and when you open the pairing screen, so a sleeping
+  instance is usually awake by the time it is needed.
+* **Staying awake.** With message alerts on and "Check every" at 5 minutes or less, the phone's check keeps a free instance
+  from spinning down. That also uses its 750 hours (one service awake all month is about 744), so do not rely on it if
+  that workspace runs other free services.
+
+What it cannot fix: rooms and queued messages and attachments held only on a free instance are lost whenever it
+restarts. Cloudflare's Durable Objects keep theirs, so consider making the Cloudflare relay the main one (Settings, Relay
+address) and Render the backup: new messages and attachments then go to the durable one first.
+
 ## Smoke test after deploying
 
 Replace `$RELAY`:
@@ -90,6 +119,13 @@ curl -i $RELAY/v1/health                                   # 200 {"ok":true}
 curl -i $RELAY/v1/rooms/00000000000000000000000000000000/state   # 404 not_found
 head -c 600 /dev/zero | tr '\0' x | curl -i -X POST --data-binary @- \
   $RELAY/v1/rooms/00000000000000000000000000000000/hello         # 413 too_large
+```
+
+Is this relay the updated one (alerts and attachments)? An updated relay answers
+`405`, an old one `404`:
+
+```
+curl -i -X POST $RELAY/v1/rooms/00000000000000000000000000000000/blobs/00000000000000000000000000000000
 ```
 
 Then pair two test members using the sequence in `test/node.test.js`

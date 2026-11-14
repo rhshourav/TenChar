@@ -39,6 +39,16 @@ object Constants {
     const val PROFILE_NAME_BYTES = 32
     const val PROFILE_AVATAR_BYTES = 28
 
+    /**
+     * A reply carries a 4-byte reference to the message it answers: [who 1][hash 3]. That leaves 60 bytes of text in a
+     * one-frame reply, and 56 per piece when a longer reply is fragmented (a piece also repeats the reference, so
+     * losing the first one does not lose it). The longest reply is therefore MAX_FRAGMENTS pieces of 56 bytes.
+     */
+    const val REPLY_HASH_BYTES = 3
+    const val REPLY_TEXT_BYTES = MAX_UTF8_BYTES - 4
+    const val REPLY_FRAGMENT_DATA = MAX_UTF8_BYTES - 8
+    const val MAX_REPLY_MESSAGE_BYTES = MAX_FRAGMENTS * REPLY_FRAGMENT_DATA
+
     /** Partly received messages kept per conversation. The oldest is dropped beyond this. */
     const val MAX_PENDING_MESSAGES = 16
 

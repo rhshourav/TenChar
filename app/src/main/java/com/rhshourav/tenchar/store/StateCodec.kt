@@ -31,14 +31,15 @@ import java.nio.charset.CodingErrorAction
  *   3  one chat; messages up to 2,048 bytes; pieces of long messages in progress
  *   4  up to 20 chats, each with its own profiles, notification topic and unread count; a default profile
  *   5  messages carry a time and may carry an attachment; the notification topic became a watch token
+ *   6  a message may answer an earlier one (a reference to it: who wrote it, and a 3-byte hash)
  *
  * **Every version is read.** Changing the format must never be the reason someone's chats disappear: a file
- * from any earlier version opens and is saved back as version 5. Only a file that is genuinely damaged, or from
+ * from any earlier version opens and is saved back as version 6. Only a file that is genuinely damaged, or from
  * a newer app than this one, is refused (and even then nothing is deleted: see Vault).
  */
 object StateCodec {
     private const val MAGIC = 0x54435331 // "TCS1"
-    const val VERSION = 5
+    const val VERSION = 6
     private const val OLDEST = 1
     private const val MAX_OUTBOX = 2000
     private const val MAX_RATCHET_BYTES = 64 * 1024
@@ -143,6 +144,13 @@ object StateCodec {
             val att = m.attachment
             out.writeBoolean(att != null)
             if (att != null) writeAttachment(out, att)
+            // Added in version 6.
+            val reply = m.reply
+            out.writeBoolean(reply != null)
+            if (reply != null) {
+                out.writeBoolean(reply.quotedMine)
+                out.write(reply.hash)
+            }
         }
         out.writeLong(c.nextMsgId)
         val pending = c.reassembler.pending
@@ -275,11 +283,16 @@ object StateCodec {
             if (delivery > Conversation.DELIVERY_SENT) throw IOException("bad delivery state")
             var at = 0L
             var attachment: Attachment? = null
+            var reply: ReplyRef? = null
             if (version >= 5) {
                 at = input.readLong()
                 if (input.readBoolean()) attachment = readAttachment(input)
             }
-            messages.add(StoredMessage(id, text, mine, delivery, at, attachment))
+            if (version >= 6 && input.readBoolean()) {
+                val quotedMine = input.readBoolean()
+                reply = ReplyRef(quotedMine, ByteArray(Constants.REPLY_HASH_BYTES).also(input::readFully))
+            }
+            messages.add(StoredMessage(id, text, mine, delivery, at, attachment, reply))
         }
         val nextId = input.readLong()
 

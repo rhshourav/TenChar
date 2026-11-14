@@ -77,6 +77,9 @@
     <string name="auth_title">TenChar আনলক করুন</string>
     <string name="auth_body">আপনার কথোপকথন খুলতে নিশ্চিত করুন যে এটি আপনি।</string>
     <string name="gate_failed">আনলক করা যায়নি। আবার চেষ্টা করুন।</string>
+    <string name="gate_use_lock">স্ক্রিন লক দিয়ে আনলক করুন</string>
+    <string name="gate_detail">অ্যান্ড্রয়েডের তথ্য: %1$s</string>
+    <string name="gate_weak_sensor">অ্যান্ড্রয়েড এই ফোনের ফিঙ্গারপ্রিন্ট সেন্সরকে “দুর্বল” ধরে। দুর্বল সেন্সর নিরাপদ হার্ডওয়্যারে রাখা কী খুলতে পারে না, তাই TenChar আপনার পিন, প্যাটার্ন বা পাসওয়ার্ড চায়।</string>
 
     <string name="setup_title">TenChar সেট আপ করুন</string>
     <string name="setup_body">শুরুর আগে দুটি ছোট পছন্দ। দুটিই পরে সেটিংসে বদলানো যাবে।</string>
@@ -135,6 +138,12 @@
     <string name="about_status">প্রতিটি বার্তা আপনার ফোনেই ডাবল র‍্যাচেট দিয়ে এনক্রিপ্ট হয়, আর রিলে শুধু সাইফারটেক্সট রাখে। ছবি, ভয়েস বার্তা ও ভিডিও আপলোডের আগে আপনার ফোনেই নিজস্ব কী দিয়ে এনক্রিপ্ট হয়, আর ছবি থেকে অবস্থান ও ক্যামেরার তথ্য মুছে ফেলা হয়। ঐচ্ছিক সতর্কবার্তা আসে এই অ্যাপের ছোট একটি ব্যাকগ্রাউন্ড সার্ভিস থেকে: গুগল বা কোনো তৃতীয় পক্ষের পুশ সার্ভিস ব্যবহার হয় না।</string>
     <string name="about_not_8">সংযুক্তি ও সতর্কবার্তা: রিলে দেখতে পায় যে আপনি ছবি, ভয়েস বার্তা বা ভিডিও পাঠিয়েছেন, কখন, এবং মোটামুটি কত বড় (১৬ KiB-এর ধাপে); ভিতরে কী আছে তা কখনো নয়। সতর্কবার্তা চালু থাকলে এই ফোন কোন চ্যাট কতবার দেখে তাও রিলে দেখতে পায়।</string>
 
+    <string name="reply">উত্তর দিন</string>
+    <string name="reply_bar">%1$s-কে উত্তর দিচ্ছেন</string>
+    <string name="reply_cancel">উত্তর বাতিল করুন</string>
+    <string name="reply_missing">মূল বার্তাটি আর নেই</string>
+    <string name="reply_video">ভিডিও</string>
+    <string name="reply_voice">ভয়েস বার্তা</string>
     <string name="day_today">আজ</string>
     <string name="day_yesterday">গতকাল</string>
     <string name="media_attach">ছবি বা ভিডিও যুক্ত করুন</string>

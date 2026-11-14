@@ -9,7 +9,9 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -95,13 +97,14 @@ internal fun attachmentLabel(att: AttachmentUi): String = when (att.kind) {
 
 /** The inside of a message bubble that holds a photo, a video or a voice message. */
 @Composable
-internal fun AttachmentContent(vm: AppViewModel, message: ChatMessage, onOpen: (ChatMessage) -> Unit) {
+internal fun AttachmentContent(vm: AppViewModel, message: ChatMessage, onOpen: (ChatMessage) -> Unit, onLongPress: () -> Unit) {
     val att = message.attachment ?: return
-    if (att.kind == Constants.KIND_VOICE) VoiceContent(vm, message, att) else PictureContent(vm, message, att, onOpen)
+    if (att.kind == Constants.KIND_VOICE) VoiceContent(vm, message, att, onLongPress) else PictureContent(vm, message, att, onOpen, onLongPress)
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PictureContent(vm: AppViewModel, message: ChatMessage, att: AttachmentUi, onOpen: (ChatMessage) -> Unit) {
+private fun PictureContent(vm: AppViewModel, message: ChatMessage, att: AttachmentUi, onOpen: (ChatMessage) -> Unit, onLongPress: () -> Unit) {
     val ratio = (att.width.toFloat() / att.height.coerceAtLeast(1)).coerceIn(0.6f, 1.8f)
     val ready = att.state == Attachment.READY
     val isVideo = att.kind == Constants.KIND_VIDEO
@@ -122,9 +125,16 @@ private fun PictureContent(vm: AppViewModel, message: ChatMessage, att: Attachme
             .aspectRatio(ratio)
             .clip(RoundedCornerShape(18.dp))
             .background(Color.White.copy(alpha = 0.07f))
-            .clickable(enabled = tappable, role = Role.Button) {
-                if (att.state == Attachment.FAILED) vm.retryAttachment(message.id) else onOpen(message)
-            },
+            .combinedClickable(
+                enabled = true,
+                role = Role.Button,
+                onLongClick = onLongPress,
+                onClick = {
+                    if (tappable) {
+                        if (att.state == Attachment.FAILED) vm.retryAttachment(message.id) else onOpen(message)
+                    }
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) {
         if (bitmap != null) {
@@ -170,8 +180,9 @@ private fun CaptionOnPicture(text: String) {
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun VoiceContent(vm: AppViewModel, message: ChatMessage, att: AttachmentUi) {
+private fun VoiceContent(vm: AppViewModel, message: ChatMessage, att: AttachmentUi, onLongPress: () -> Unit) {
     val bars = remember(att.id) {
         VoiceRecorder.bars(att.wave).let { if (it.isEmpty()) FloatArray(Constants.WAVE_BARS) { 0.3f } else it }
     }
@@ -183,6 +194,12 @@ private fun VoiceContent(vm: AppViewModel, message: ChatMessage, att: Attachment
     Row(
         modifier = Modifier
             .width(250.dp)
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {},
+                onLongClick = onLongPress,
+            )
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

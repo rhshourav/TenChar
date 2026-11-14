@@ -3,6 +3,7 @@ package com.rhshourav.tenchar.ui
 import android.app.Application
 import android.content.Context
 import android.graphics.Bitmap
+import android.hardware.biometrics.BiometricManager
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -45,6 +46,8 @@ import com.rhshourav.tenchar.store.KeysLostReason
 import com.rhshourav.tenchar.store.MediaStore
 import com.rhshourav.tenchar.store.OutboxItem
 import com.rhshourav.tenchar.store.Profile
+import com.rhshourav.tenchar.store.Quotes
+import com.rhshourav.tenchar.store.ReplyRef
 import com.rhshourav.tenchar.store.StateCodec
 import com.rhshourav.tenchar.store.StoredMessage
 import com.rhshourav.tenchar.store.Vault
@@ -85,6 +88,20 @@ enum class AlertInterval(val seconds: Int) {
     Minutes5(Constants.ALERT_INTERVAL_LONG_S),
 }
 
+/** What Android says about this phone's biometric sensor, as far as unlocking the vault key is concerned. */
+enum class BiometricState {
+    /** A strong sensor with a finger enrolled: the fingerprint can open the key. */
+    Strong,
+
+    /** Rated "weak" (common for some optical under-display sensors): Android does not let it open a hardware key. */
+    WeakOnly,
+    NoneEnrolled,
+    Unavailable,
+}
+
+/** The message a reply answers, as shown above the reply: [targetId] is null if it is no longer in the chat. */
+class QuoteUi(val targetId: Long?, val mine: Boolean, val text: String, val kind: Int)
+
 /** Why a photo, voice message or video was not sent. */
 enum class MediaNotice { TooLong, TooBig, TooShort, Unsupported, Failed, MicBusy, MicDenied, RelayOutdated }
 
@@ -109,6 +126,8 @@ class ChatMessage(
     /** When it was sent or received, milliseconds since 1970; 0 if unknown (saved by an older version). */
     val at: Long = 0L,
     val attachment: AttachmentUi? = null,
+    /** Set if this message answers an earlier one. */
+    val quote: QuoteUi? = null,
 ) {
     var delivery by mutableStateOf(initial)
 }
@@ -163,6 +182,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var unlocking by mutableStateOf(false)
         private set
     var unlockFailed by mutableStateOf(false)
+        private set
+
+    /** What the system said when the prompt failed (for example "7: Too many attempts"), shown to help diagnose it. */
+    var unlockDetail by mutableStateOf<String?>(null)
+        private set
+
+    /** The message the next text will answer, or null. */
+    var replyingTo by mutableStateOf<ChatMessage?>(null)
         private set
 
     /** Set when the saved data cannot be opened. The files are still on the phone. */
@@ -239,6 +266,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val transferWake = Channel<Unit>(Channel.CONFLATED)
     private val transferRetryAt = HashMap<String, Long>()
 
+    /** The reference carried by the pieces of a long reply, kept until the last piece arrives. Not saved: see [receive]. */
+    private val replyHints = HashMap<String, Wire.Quote>()
+
     val setupDone: Boolean get() = prefs.getBoolean(KEY_SETUP_DONE, false)
 
     init {
@@ -308,10 +338,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // ---- lock and unlock ---------------------------------------------------------------------------------
 
     /** Starts the system unlock prompt. The first run creates the vault, later runs open it. */
-    fun unlock(auth: Authenticator) {
+    fun unlock(auth: Authenticator, credentialOnly: Boolean = false) {
         if (unlocking || dek != null) return
         unlocking = true
         unlockFailed = false
+        unlockDetail = null
         val create = !vault.exists()
         val legacy = !create && vault.isLegacy()
         val cipher = try {
@@ -331,16 +362,33 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             // Temporary: nothing is touched, the person can simply try again.
             unlocking = false
             unlockFailed = true
+            unlockDetail = e.javaClass.simpleName
             return
         }
         auth.authenticate(
             cipher,
+            credentialOnly,
             onSuccess = { authed -> finishUnlock(authed, create, legacy) },
-            onFailure = { cancelled ->
+            onFailure = { cancelled, detail ->
                 unlocking = false
                 unlockFailed = !cancelled
+                unlockDetail = if (cancelled) null else detail
             },
         )
+    }
+
+    /**
+     * What Android says about the fingerprint sensor. A "weak" sensor cannot open a hardware-protected key (Android
+     * only lets strong biometrics do that), so on such a phone the screen lock is the way in.
+     */
+    fun biometricState(): BiometricState {
+        val manager = getApplication<Application>().getSystemService(BiometricManager::class.java) ?: return BiometricState.Unavailable
+        val strong = manager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+        if (strong == BiometricManager.BIOMETRIC_SUCCESS) return BiometricState.Strong
+        if (manager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS) {
+            return BiometricState.WeakOnly
+        }
+        return if (strong == BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED) BiometricState.NoneEnrolled else BiometricState.Unavailable
     }
 
     private fun finishUnlock(cipher: Cipher?, create: Boolean, legacy: Boolean) {
@@ -357,6 +405,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) {
             unlocking = false
             unlockFailed = true
+            unlockDetail = e.javaClass.simpleName // for example UserNotAuthenticatedException: the prompt did not open the key
             return
         }
         viewModelScope.launch {
@@ -390,12 +439,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 if (resave) gate.withLock { persist() }
                 tidyMedia(state)
                 syncWatches(state)
+                warmUpRelays(state.conversations.flatMap { it.endpoints } + endpoints())
             } catch (e: KeysLostException) {
                 key.fill(0)
                 keysLost(e.reason, e.cause)
             } catch (e: Exception) {
                 key.fill(0)
                 unlockFailed = true
+                unlockDetail = e.javaClass.simpleName
             } finally {
                 unlocking = false
             }
@@ -420,6 +471,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         code = null
         entry = ""
         draft = ""
+        replyingTo = null
+        replyHints.clear()
         notice = null
         mediaNotice = null
         goto(Screen.Gate)
@@ -442,6 +495,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         chats.clear(); entries.clear(); messages.clear()
         currentId = null
         verification = null
+        replyingTo = null
         lostReason = reason
         lostDetail = cause?.javaClass?.simpleName
         goto(Screen.KeysReset)
@@ -532,10 +586,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         conv.unread = 0
         entries[id]?.let { syncEntry(it, conv) }
         messages.clear()
-        conv.messages.forEach { messages.add(it.toUi()) }
+        conv.messages.forEachIndexed { i, m -> messages.add(m.toUi(conv, i)) }
         verification = conv.verification
         connection = connectionOf[id] ?: Connection.Online
         draft = ""
+        replyingTo = null
         mediaNotice = null
         goto(if (conv.verified) Screen.Chat else Screen.Verify)
         viewModelScope.launch { gate.withLock { persist() } }
@@ -546,6 +601,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun closeChat() {
         cancelRecording()
         voice.stop()
+        replyingTo = null
         currentId = null
         messages.clear()
         verification = null
@@ -554,6 +610,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startNewChat() {
+        warmUpRelays(endpoints())
         notice = null
         if (chats.size >= AppState.MAX_CHATS) {
             notice = Notice.TooManyChats
@@ -766,6 +823,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (currentId == conv.localId) {
             cancelRecording()
             voice.stop()
+            replyingTo = null
             currentId = null
             messages.clear()
             verification = null
@@ -821,6 +879,25 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             // The chain is used up: nothing more can be sent on this chat.
         } finally {
             frame.fill(0)
+        }
+    }
+
+    /**
+     * Wakes sleeping relays. A free Render instance goes to sleep after 15 minutes without traffic and takes about a
+     * minute to wake, so asking early (right after unlocking, when opening the pairing screen) means it is awake by the
+     * time a message or a pairing needs it. Best effort, and a few bytes each.
+     */
+    private fun warmUpRelays(urls: List<String>) {
+        for (url in urls.distinct()) {
+            viewModelScope.launch {
+                try {
+                    clientFor(url).ping()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Best effort.
+                }
+            }
         }
     }
 
@@ -921,19 +998,25 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val state = app ?: return
         val conv = conversation(currentId) ?: return
         if (!conv.verified || text.isEmpty()) return
+        // A reply names the message it answers (a short reference; the quoted text itself is never sent). It carries
+        // 4 bytes more than a plain message, so its pieces are cut a little shorter.
+        val ref: ReplyRef? = replyingTo?.let { target -> conv.messages.firstOrNull { it.id == target.id }?.let(Quotes::refTo) }
         // More than one message's worth of text becomes several messages, each shown as its own bubble.
-        val pieces = MessageLimits.split(text)
+        val pieces = MessageLimits.split(text, if (ref != null) Constants.MAX_REPLY_MESSAGE_BYTES else Constants.MAX_MESSAGE_BYTES)
         if (pieces.isEmpty()) return
         // Refuse rather than half-send if the queue could not take every frame (it empties as the relay accepts them).
         if (conv.outbox.size + pieces.sumOf { Wire.frameCount(it) } > MAX_OUTBOX_FRAMES) return
         draft = ""
+        replyingTo = null
         viewModelScope.launch {
             gate.withLock {
                 if (app !== state) return@withLock
-                for (piece in pieces) {
+                for ((n, piece) in pieces.withIndex()) {
                     val id = conv.nextMsgId++
+                    // Only the first bubble of a long text is the reply.
+                    val answers = if (n == 0) ref else null
                     // One frame for a short message, several fragments for a longer one; the id ties them together.
-                    val frames = Wire.encodeMessage(piece, id.toInt() and 0xFFFF) ?: continue
+                    val frames = Wire.encodeMessage(piece, id.toInt() and 0xFFFF, answers?.let(Quotes::toWire)) ?: continue
                     val envelopes = try {
                         frames.map { conv.ratchet.encrypt(it) }
                     } catch (e: IllegalStateException) {
@@ -941,7 +1024,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     } finally {
                         frames.forEach { it.fill(0) }
                     }
-                    addMessage(conv, StoredMessage(id, piece, true, Conversation.DELIVERY_QUEUED, System.currentTimeMillis()))
+                    addMessage(conv, StoredMessage(id, piece, true, Conversation.DELIVERY_QUEUED, System.currentTimeMillis(), null, answers))
                     for (envelope in envelopes) conv.outbox.add(OutboxItem(id, envelope))
                 }
                 // The ratchet has moved on: save before anything is sent.
@@ -954,7 +1037,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private fun addMessage(conv: Conversation, message: StoredMessage) {
         conv.messages.add(message)
         val open = conv.localId == currentId
-        if (open) messages.add(message.toUi())
+        if (open) messages.add(message.toUi(conv, conv.messages.lastIndex))
         while (conv.messages.size > Conversation.MAX_MESSAGES) {
             val dropped = conv.messages.removeAt(0)
             if (open && messages.isNotEmpty()) messages.removeAt(0)
@@ -966,7 +1049,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun StoredMessage.toUi(): ChatMessage = ChatMessage(
+    private fun StoredMessage.toUi(conv: Conversation, index: Int): ChatMessage = ChatMessage(
         id, text, mine,
         when (delivery) {
             Conversation.DELIVERY_QUEUED -> Delivery.Queued
@@ -975,7 +1058,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         },
         at,
         attachment?.let { AttachmentUi(it.id, it.kind, it.width, it.height, it.durationDs, it.wave, it.state) },
+        reply?.let { ref ->
+            // The answered message is looked up in this phone's own copy of the chat; its text was never sent.
+            val target = Quotes.resolve(conv.messages, index, ref)
+            if (target == null) QuoteUi(null, ref.quotedMine, "", 0)
+            else QuoteUi(target.id, target.mine, target.text, target.attachment?.kind ?: 0)
+        },
     )
+
+    // ---- replying to a chosen message --------------------------------------------------------------------------
+
+    /** The next text sent will answer this message. Long-press on a message, then Reply. */
+    fun startReply(messageId: Long) {
+        val conv = conversation(currentId) ?: return
+        if (!conv.verified) return
+        replyingTo = messages.firstOrNull { it.id == messageId }
+    }
+
+    fun cancelReply() {
+        replyingTo = null
+    }
 
     // ---- photos, voice messages and videos ---------------------------------------------------------------------
     //
@@ -1519,10 +1621,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val frame = conv.ratchet.decrypt(envelope) ?: return
         val decoded = Wire.decodeFrame(frame)
         frame.fill(0)
+        var reply: Wire.Quote? = null
         val text = when (decoded) {
             // A whole message, or one piece of a longer one (shown once the last piece arrives).
-            is Wire.Decoded.Text -> decoded.text
-            is Wire.Decoded.Fragment -> conv.reassembler.accept(decoded)
+            is Wire.Decoded.Text -> {
+                reply = decoded.reply
+                decoded.text
+            }
+            is Wire.Decoded.Fragment -> {
+                // Every piece of a long reply carries its reference; keep it until the last piece completes the message.
+                // (Not saved with the chat: if the app locks halfway, the text still arrives, just without its quote.)
+                val hintKey = "${conv.localId}:${decoded.group}"
+                decoded.reply?.let {
+                    if (replyHints.size > MAX_REPLY_HINTS) replyHints.clear()
+                    replyHints[hintKey] = it
+                }
+                conv.reassembler.accept(decoded)?.also { reply = replyHints.remove(hintKey) }
+            }
             is Wire.Decoded.AttachmentDescriptor -> {
                 // A photo, voice message or video waiting on a relay: shown at once, filled in when it has downloaded.
                 addMessage(
@@ -1547,7 +1662,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
             null -> null
         } ?: return
-        addMessage(conv, StoredMessage(conv.nextMsgId++, text, false, Conversation.DELIVERY_NONE, System.currentTimeMillis()))
+        addMessage(
+            conv,
+            StoredMessage(conv.nextMsgId++, text, false, Conversation.DELIVERY_NONE, System.currentTimeMillis(), null, reply?.let(Quotes::fromWire)),
+        )
         if (conv.localId != currentId) {
             conv.unread = (conv.unread + 1).coerceAtMost(UNREAD_CAP)
             entries[conv.localId]?.let { syncEntry(it, conv) }
@@ -1595,6 +1713,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         const val KEY_FALLBACK_ON = "fallback_enabled"
         const val KEY_AUTOLOCK = "auto_lock"
         const val KEY_SETUP_DONE = "setup_done"
+        const val MAX_REPLY_HINTS = 64
         const val RECORD_TICK_MS = 80L
         const val RECORD_BARS_SHOWN = 32
         const val TRANSFER_IDLE_MS = 4_000L

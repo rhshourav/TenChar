@@ -48,7 +48,17 @@ class KeysLostException(val reason: KeysLostReason, cause: Throwable? = null) : 
  * had to be used through the prompt's own CryptoObject (see [Vault.legacyCipherForUnlock]).
  */
 fun interface Authenticator {
-    fun authenticate(cipher: Cipher?, onSuccess: (Cipher?) -> Unit, onFailure: (cancelled: Boolean) -> Unit)
+    /**
+     * [credentialOnly] asks for the screen lock (PIN, pattern or password) and not the fingerprint, for a phone whose
+     * fingerprint will not work with the key. [onFailure] gets what the system said ("7: Too many attempts...") unless
+     * the person simply cancelled, so that it can be shown instead of a bare "could not unlock".
+     */
+    fun authenticate(
+        cipher: Cipher?,
+        credentialOnly: Boolean,
+        onSuccess: (Cipher?) -> Unit,
+        onFailure: (cancelled: Boolean, detail: String?) -> Unit,
+    )
 }
 
 /**

@@ -1,0 +1,7 @@
+room=2122232425262728292a2b2c2d2e2f30
+memberId=34c9b66a61337f7144d2a68af1380520
+memberToken=db2f2b3d0fe8609512b40292cc549f2d96ae1499d38ee1bc8e959ae16554d410
+verification=6498 9352
+afterText=after five
+localId=3e916ca0cb8b5f5d
+attachmentId=45a2ab9d082a1463819ff9e1a4ad3757

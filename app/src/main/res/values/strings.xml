@@ -29,6 +29,9 @@
     <string name="gate_body">Unlock to see your conversation.</string>
     <string name="gate_unlock">Unlock</string>
     <string name="gate_failed">Could not unlock. Try again.</string>
+    <string name="gate_use_lock">Use screen lock instead</string>
+    <string name="gate_detail">Detail from Android: %1$s</string>
+    <string name="gate_weak_sensor">Android rates this phone\'s fingerprint sensor as \"weak\". A weak sensor cannot unlock keys kept in secure hardware, so TenChar asks for your PIN, pattern or password.</string>
 
     <string name="pair_title">Pair two phones</string>
     <string name="pair_body">Make a one-time code on one phone and type it on the other. The code works once and is deleted after pairing.</string>
@@ -71,6 +74,12 @@
     <string name="delivery_sent">Sent</string>
     <string name="msg_from_you">You: %1$s</string>
     <string name="msg_from_them">Them: %1$s</string>
+    <string name="reply">Reply</string>
+    <string name="reply_bar">Replying to %1$s</string>
+    <string name="reply_cancel">Cancel reply</string>
+    <string name="reply_missing">The original message is no longer available</string>
+    <string name="reply_video">Video</string>
+    <string name="reply_voice">Voice message</string>
     <string name="day_today">Today</string>
     <string name="day_yesterday">Yesterday</string>
 

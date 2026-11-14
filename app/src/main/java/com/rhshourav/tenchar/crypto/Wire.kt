@@ -17,6 +17,12 @@ import java.util.Base64
  *                      one longer message share a group and are joined in index order by [Reassembler]
  *   type 3, profile:   the payload is [color 1][avatar length 1][avatar, one emoji][name]; how the sender
  *                      appears to the other person. Not a message: it is never shown in the chat
+ *   type 5, reply text: the payload is [who 1][hash 3][up to 60 bytes of UTF-8]: a whole message that answers an earlier
+ *                      one. [who] is 0 if the answered message was written by the sender of this reply and 1 if by its
+ *                      receiver. [hash] is the first 3 bytes of a hash of that message (see [quoteHash]); the receiver finds
+ *                      the message in its own copy of the chat, so no quoted text is ever sent and none can be invented
+ *   type 6, reply fragment: [who 1][hash 3][group 2][index 1][count 1][up to 56 bytes of UTF-8]; the reference is repeated
+ *                      in every piece, so a missing first piece costs the reply its quote, not its text
  *   type 4, attachment: the payload is [kind 1][key 32][size 4][width 2][height 2][duration 2][waveform 0 or 20];
  *                      a photo (1), voice message (2) or short video (3) waiting on the relay, encrypted with that
  *                      key (see [BlobCrypto]). Sizes are big endian, duration is in tenths of a second, the
@@ -32,6 +38,8 @@ object Wire {
     const val TYPE_FRAGMENT = 2
     const val TYPE_PROFILE = 3
     const val TYPE_ATTACHMENT = 4
+    const val TYPE_REPLY_TEXT = 5
+    const val TYPE_REPLY_FRAGMENT = 6
     private const val ATTACHMENT_FIXED = 43
 
     private val encoder = Base64.getEncoder().withoutPadding()
@@ -39,11 +47,11 @@ object Wire {
 
     /** What one frame holds. */
     sealed interface Decoded {
-        /** A whole message. */
-        class Text(val text: String) : Decoded
+        /** A whole message. [reply] is what it answers, if it is a reply. */
+        class Text(val text: String, val reply: Quote? = null) : Decoded
 
         /** One piece of a longer message. [data] is raw UTF-8 and may end in the middle of a character. */
-        class Fragment(val group: Int, val index: Int, val count: Int, val data: ByteArray) : Decoded
+        class Fragment(val group: Int, val index: Int, val count: Int, val data: ByteArray, val reply: Quote? = null) : Decoded
 
         /** How the sender wants to appear. Strictly well formed but not yet cleaned for display: see Profile.of. */
         class ProfileUpdate(val name: String, val avatar: String, val color: Int) : Decoded
@@ -108,6 +116,82 @@ object Wire {
         return Decoded.AttachmentDescriptor(kind, key, size, width, height, durationDs, wave)
     }
 
+    /** What a reply points at: [who] wrote it (0 the replier, 1 the person being replied to) and a short [hash] of it. */
+    class Quote(val who: Int, val hash: ByteArray)
+
+    /**
+     * The 3 bytes that identify a message inside a reply: SHA-256 of a label and the message's [canonical] form (its
+     * text, or "att:" and its attachment id), cut to 3 bytes. Both phones hold the same text, so both get the same value;
+     * 24 bits is enough to tell apart the messages of one chat, and two identical texts are the same message to a reader.
+     */
+    fun quoteHash(canonical: String): ByteArray =
+        Kdf.sha256("tenchar-reply-v1".toByteArray(Charsets.UTF_8), canonical.toByteArray(Charsets.UTF_8))
+            .copyOf(Constants.REPLY_HASH_BYTES)
+
+    /**
+     * The frames of a reply: one frame if the text is at most 60 bytes, otherwise fragments of 56. Null if [text] is
+     * blank, not displayable, over MAX_CHARS characters, or needs more than MAX_FRAGMENTS pieces (1,960 bytes).
+     */
+    private fun encodeReply(text: String, group: Int, reply: Quote): List<ByteArray>? {
+        if (text.isBlank() || !isDisplayable(text) || reply.who !in 0..1 || reply.hash.size != Constants.REPLY_HASH_BYTES) return null
+        if (MessageLimits.graphemeCount(text) > Constants.MAX_CHARS) return null
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        if (bytes.size > Constants.MAX_REPLY_MESSAGE_BYTES) return null
+        fun header(frame: ByteArray) {
+            frame[2] = reply.who.toByte()
+            reply.hash.copyInto(frame, 3)
+        }
+        if (bytes.size <= Constants.REPLY_TEXT_BYTES) {
+            val frame = ByteArray(Constants.FRAME_BYTES)
+            frame[0] = TYPE_REPLY_TEXT.toByte()
+            frame[1] = (4 + bytes.size).toByte()
+            header(frame)
+            bytes.copyInto(frame, 6)
+            return listOf(frame)
+        }
+        val count = (bytes.size + Constants.REPLY_FRAGMENT_DATA - 1) / Constants.REPLY_FRAGMENT_DATA
+        return List(count) { index ->
+            val from = index * Constants.REPLY_FRAGMENT_DATA
+            val to = minOf(bytes.size, from + Constants.REPLY_FRAGMENT_DATA)
+            val frame = ByteArray(Constants.FRAME_BYTES)
+            frame[0] = TYPE_REPLY_FRAGMENT.toByte()
+            frame[1] = (8 + (to - from)).toByte()
+            header(frame)
+            frame[6] = (group ushr 8).toByte()
+            frame[7] = group.toByte()
+            frame[8] = index.toByte()
+            frame[9] = count.toByte()
+            bytes.copyInto(frame, 10, from, to)
+            frame
+        }
+    }
+
+    private fun decodeReplyText(frame: ByteArray): Decoded.Text? {
+        val len = frame[1].toInt() and 0xFF
+        if (len < 5 || len > Constants.MAX_UTF8_BYTES) return null
+        if (!zeroFrom(frame, 2 + len)) return null
+        val who = frame[2].toInt() and 0xFF
+        if (who > 1) return null
+        val text = validText(frame, 6, len - 4) ?: return null
+        return Decoded.Text(text, Quote(who, frame.copyOfRange(3, 6)))
+    }
+
+    private fun decodeReplyFragment(frame: ByteArray): Decoded.Fragment? {
+        val len = frame[1].toInt() and 0xFF
+        if (len <= 8 || len > Constants.MAX_UTF8_BYTES) return null
+        if (!zeroFrom(frame, 2 + len)) return null
+        val who = frame[2].toInt() and 0xFF
+        if (who > 1) return null
+        val group = ((frame[6].toInt() and 0xFF) shl 8) or (frame[7].toInt() and 0xFF)
+        val index = frame[8].toInt() and 0xFF
+        val count = frame[9].toInt() and 0xFF
+        if (count < 2 || count > Constants.MAX_FRAGMENTS || index >= count) return null
+        val dataLength = len - 8
+        // Canonical form, as for plain fragments: every piece but the last is full.
+        if (index < count - 1 && dataLength != Constants.REPLY_FRAGMENT_DATA) return null
+        return Decoded.Fragment(group, index, count, frame.copyOfRange(10, 2 + len), Quote(who, frame.copyOfRange(3, 6)))
+    }
+
     /** A profile frame: [name] and [avatar] (an emoji, or empty) and a colour number. Null if it cannot fit or is malformed. */
     fun encodeProfile(name: String, avatar: String, color: Int): ByteArray? {
         if (color !in 0 until Constants.AVATAR_COLORS) return null
@@ -146,7 +230,8 @@ object Wire {
      * fragments together; only its low 16 bits are used. Null if [text] is not one message ([MessageLimits.fits])
      * or is blank or not displayable. The length rule is enforced here, on the way out.
      */
-    fun encodeMessage(text: String, group: Int): List<ByteArray>? {
+    fun encodeMessage(text: String, group: Int, reply: Quote? = null): List<ByteArray>? {
+        if (reply != null) return encodeReply(text, group, reply)
         if (text.isBlank() || !MessageLimits.fits(text) || !isDisplayable(text)) return null
         val bytes = text.toByteArray(Charsets.UTF_8)
         if (bytes.size <= Constants.MAX_UTF8_BYTES) return listOf(encodeText(text) ?: return null)
@@ -185,6 +270,8 @@ object Wire {
             TYPE_FRAGMENT -> decodeFragment(frame)
             TYPE_PROFILE -> decodeProfile(frame)
             TYPE_ATTACHMENT -> decodeAttachment(frame)
+            TYPE_REPLY_TEXT -> decodeReplyText(frame)
+            TYPE_REPLY_FRAGMENT -> decodeReplyFragment(frame)
             else -> null
         }
     }

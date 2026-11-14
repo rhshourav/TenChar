@@ -45,13 +45,16 @@ class MainActivity : ComponentActivity() {
      * seconds afterwards (see Vault), so a plain prompt is enough. Only a vault from an earlier version passes a
      * [cipher], which then has to be used through the prompt itself.
      */
-    private val authenticator = Authenticator { cipher, onSuccess, onFailure ->
+    private val authenticator = Authenticator { cipher, credentialOnly, onSuccess, onFailure ->
+        val allowed = if (credentialOnly) {
+            BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        } else {
+            BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        }
         val prompt = BiometricPrompt.Builder(this)
             .setTitle(getString(R.string.auth_title))
             .setDescription(getString(R.string.auth_body))
-            .setAllowedAuthenticators(
-                BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL,
-            )
+            .setAllowedAuthenticators(allowed)
             .build()
         val signal = CancellationSignal()
         promptSignal = signal
@@ -62,13 +65,14 @@ class MainActivity : ComponentActivity() {
                     onSuccess(null)
                 } else {
                     val authed: Cipher? = result.cryptoObject?.cipher
-                    if (authed != null) onSuccess(authed) else onFailure(false)
+                    if (authed != null) onSuccess(authed) else onFailure(false, "no cipher")
                 }
             }
 
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence?) {
                 promptSignal = null
-                onFailure(errorCode == ERROR_CANCELED || errorCode == ERROR_USER_CANCELED)
+                val cancelled = errorCode == ERROR_CANCELED || errorCode == ERROR_USER_CANCELED
+                onFailure(cancelled, if (cancelled) null else "$errorCode: ${errString ?: ""}".trim())
             }
         }
         if (cipher == null) {
@@ -93,6 +97,7 @@ class MainActivity : ComponentActivity() {
                 deviceSecure = deviceSecure,
                 onOpenSecuritySettings = ::openSecuritySettings,
                 onUnlock = { vm.unlock(authenticator) },
+                onUnlockWithLock = { vm.unlock(authenticator, credentialOnly = true) },
             )
         }
     }

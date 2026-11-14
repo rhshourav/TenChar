@@ -22,6 +22,7 @@ const REQUEST_TIMEOUT_MS = 120_000;
 export class MemoryStorage {
   #map = new Map(); // key -> JSON text
   #bin = new Map(); // key -> Uint8Array (attachment pieces)
+  #binBytes = 0;
   version = 0;
   /** Binary keys written / removed since the last flush to disk. */
   binDirty = new Set();
@@ -30,6 +31,10 @@ export class MemoryStorage {
   get size() {
     return this.#map.size + this.#bin.size;
   }
+  /** Bytes of attachment held in memory by this room. */
+  get binBytes() {
+    return this.#binBytes;
+  }
   get(key) {
     if (this.#bin.has(key)) return this.#bin.get(key);
     const raw = this.#map.get(key);
@@ -37,6 +42,7 @@ export class MemoryStorage {
   }
   put(key, value) {
     if (value instanceof Uint8Array) {
+      this.#binBytes += value.length - (this.#bin.get(key)?.length ?? 0);
       this.#bin.set(key, value);
       this.binDirty.add(key);
       this.binGone.delete(key);
@@ -48,7 +54,9 @@ export class MemoryStorage {
   delete(keys) {
     for (const key of keys) {
       this.#map.delete(key);
+      const had = this.#bin.get(key);
       if (this.#bin.delete(key)) {
+        this.#binBytes -= had.length;
         this.binDirty.delete(key);
         this.binGone.add(key);
       }
@@ -62,6 +70,7 @@ export class MemoryStorage {
     }
     this.#map.clear();
     this.#bin.clear();
+    this.#binBytes = 0;
     this.version++;
   }
   list(prefix, { start, limit } = {}) {
@@ -82,6 +91,7 @@ export class MemoryStorage {
     this.version++;
   }
   loadBinary(key, bytes) {
+    this.#binBytes += bytes.length - (this.#bin.get(key)?.length ?? 0);
     this.#bin.set(key, bytes);
     this.version++;
   }
@@ -137,7 +147,20 @@ function readBody(req, max, binary = false) {
   });
 }
 
-export function createRelay({ dataDir = null, maxRooms = 10000, now = () => Date.now() } = {}) {
+/**
+ * maxBlobMemoryBytes: all waiting attachments together. A free Render instance has 512 MB; a host that kills the process
+ * for using too much memory loses every room, so uploads that would not fit are refused (503, "try again") instead.
+ * maxUploads: uploads read into memory at once. keepAliveMs: how long an idle connection stays open; Render's proxy
+ * reuses connections, so this must be longer than the proxy's own idle timeout (Render's docs say to use 120 s).
+ */
+export function createRelay({
+  dataDir = null,
+  maxRooms = 10000,
+  maxBlobMemoryBytes = 96 * 1024 * 1024,
+  maxUploads = 4,
+  keepAliveMs = 120_000,
+  now = () => Date.now(),
+} = {}) {
   const rooms = new Map(); // room id -> {storage, core, pending, persisted, persistMutex}
 
   function newEntry() {
@@ -229,7 +252,24 @@ export function createRelay({ dataDir = null, maxRooms = 10000, now = () => Date
     }
   }
 
+  let activeUploads = 0;
+
+  function storedBlobBytes() {
+    let total = 0;
+    for (const entry of rooms.values()) total += entry.storage.binBytes;
+    return total;
+  }
+
   async function handle(req, res) {
+    const upload = { active: false };
+    try {
+      await handleInner(req, res, upload);
+    } finally {
+      if (upload.active) activeUploads--;
+    }
+  }
+
+  async function handleInner(req, res, upload) {
     const url = new URL(req.url ?? "/", "http://relay.invalid");
 
     if (url.pathname === "/v1/health") {
@@ -248,6 +288,14 @@ export function createRelay({ dataDir = null, maxRooms = 10000, now = () => Date
         res.once("finish", () => req.socket?.destroy());
         return send(res, refused.status, refused.body, { close: true });
       }
+      // Only now (a member of a real room) look at what this instance can hold.
+      const declared = Number(req.headers["content-length"]) || MAX_BLOB_BYTES;
+      if (activeUploads >= maxUploads || storedBlobBytes() + declared > maxBlobMemoryBytes) {
+        res.once("finish", () => req.socket?.destroy());
+        return send(res, 503, { error: "unavailable" }, { close: true });
+      }
+      upload.active = true;
+      activeUploads++;
     }
     const body = await readBody(req, bodyLimit(route.action), route.action === "put_blob");
     if (body.tooLarge) {
@@ -286,8 +334,12 @@ export function createRelay({ dataDir = null, maxRooms = 10000, now = () => Date
       else res.destroy();
     });
   });
-  server.headersTimeout = 10_000;
-  server.requestTimeout = REQUEST_TIMEOUT_MS;
+  // Render's proxy keeps connections to this server open and reuses them. If Node closes an idle one first (its default
+  // is 5 seconds) a request can land on a connection that is just being closed, which shows up as an occasional 502.
+  // The headers timeout must be longer than the keep-alive one, and the request timeout longer than both.
+  server.keepAliveTimeout = keepAliveMs;
+  server.headersTimeout = keepAliveMs + 5_000;
+  server.requestTimeout = Math.max(REQUEST_TIMEOUT_MS, keepAliveMs + 60_000);
 
   let timer = null;
   return {
@@ -310,7 +362,13 @@ export function createRelay({ dataDir = null, maxRooms = 10000, now = () => Date
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const dataDir = process.env.DATA_DIR || null;
-  const relay = createRelay({ dataDir, maxRooms: Number(process.env.MAX_ROOMS) || 10000 });
+  const relay = createRelay({
+    dataDir,
+    maxRooms: Number(process.env.MAX_ROOMS) || 10000,
+    maxBlobMemoryBytes: (Number(process.env.MAX_BLOB_MEMORY_MB) || 96) * 1024 * 1024,
+    maxUploads: Number(process.env.MAX_UPLOADS) || 4,
+    keepAliveMs: (Number(process.env.KEEP_ALIVE_SECONDS) || 120) * 1000,
+  });
   const port = await relay.start(Number(process.env.PORT) || 8787);
   console.log(`tenchar relay listening on port ${port}`);
   if (!dataDir) {

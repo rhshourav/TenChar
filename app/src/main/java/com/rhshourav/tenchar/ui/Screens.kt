@@ -51,7 +51,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -127,6 +132,7 @@ fun TenCharApp(
     deviceSecure: Boolean,
     onOpenSecuritySettings: () -> Unit,
     onUnlock: () -> Unit,
+    onUnlockWithLock: () -> Unit,
 ) {
     TenCharTheme {
         val reduceMotion = LocalReduceMotion.current
@@ -161,7 +167,7 @@ fun TenCharApp(
                 ) { screen ->
                     when (screen) {
                         Screen.Setup -> SetupScreen(vm, onUnlock)
-                        Screen.Gate -> GateScreen(vm, onUnlock)
+                        Screen.Gate -> GateScreen(vm, onUnlock, onUnlockWithLock)
                         Screen.Chats -> ChatsScreen(vm)
                         Screen.ChatSettings -> ChatSettingsScreen(vm)
                         Screen.Pair -> PairScreen(vm)
@@ -191,13 +197,30 @@ private fun LockRequiredScreen(onOpenSettings: () -> Unit) {
 }
 
 @Composable
-private fun GateScreen(vm: AppViewModel, onUnlock: () -> Unit) {
+private fun GateScreen(vm: AppViewModel, onUnlock: () -> Unit, onUnlockWithLock: () -> Unit) {
+    // Read once per visit: a phone's sensor class does not change while the gate is showing.
+    val sensor = remember { vm.biometricState() }
+    // On a phone whose fingerprint sensor Android rates "weak", the fingerprint can never open the key, so the screen lock
+    // is offered at once. On any phone it is offered after a failure, so nobody is shut out by a misbehaving sensor.
+    val offerLock = vm.unlockFailed || sensor == BiometricState.WeakOnly
     TenCharScreen(
         contentArrangement = Arrangement.Center,
         contentAlignment = Alignment.CenterHorizontally,
-        bottomBar = { TcButton(stringResource(R.string.gate_unlock), onUnlock, enabled = !vm.unlocking) },
+        bottomBar = {
+            TcButton(stringResource(R.string.gate_unlock), onUnlock, enabled = !vm.unlocking)
+            if (offerLock) TcButton(stringResource(R.string.gate_use_lock), onUnlockWithLock, kind = ButtonKind.Glass, enabled = !vm.unlocking)
+        },
     ) {
         HeroBlock(stringResource(R.string.gate_title), stringResource(R.string.gate_body))
+        if (sensor == BiometricState.WeakOnly) {
+            Text(
+                text = stringResource(R.string.gate_weak_sensor),
+                style = MaterialTheme.typography.labelMedium,
+                color = Tc.InkMuted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+            )
+        }
         if (vm.unlockFailed) {
             Text(
                 text = stringResource(R.string.gate_failed),
@@ -209,6 +232,16 @@ private fun GateScreen(vm: AppViewModel, onUnlock: () -> Unit) {
                     .padding(top = 20.dp)
                     .semantics { liveRegion = LiveRegionMode.Polite },
             )
+            // What the system itself said, so a fingerprint that "shows incorrect" can be told apart from a lockout or a key problem.
+            vm.unlockDetail?.let { detail ->
+                Text(
+                    text = stringResource(R.string.gate_detail, detail),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Tc.InkFaint,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+            }
         }
     }
 }
@@ -580,6 +613,7 @@ private fun ChatScreen(vm: AppViewModel) {
     val seen = remember { HashSet<Long>() }
     val chat = vm.current
     var viewing by remember { mutableStateOf<ChatMessage?>(null) }
+    val jumpScope = rememberCoroutineScope()
     // Closing the viewer when the chat changes or locks keeps decrypted media from outliving its screen.
     LaunchedEffect(vm.currentId) { viewing = null }
     TenCharScreen(
@@ -625,6 +659,11 @@ private fun ChatScreen(vm: AppViewModel) {
                             showTime = endOfRun,
                             showSent = message.id == lastMineId,
                             onOpenMedia = { viewing = it },
+                            onReply = { vm.startReply(it.id) },
+                            onJump = { id ->
+                                val at = vm.messages.indexOfFirst { it.id == id }
+                                if (at >= 0) jumpScope.launch { listState.animateScrollToItem(at) }
+                            },
                         )
                     }
                 }
@@ -685,6 +724,7 @@ private fun ConnectionBanner(connection: Connection) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageRow(
     vm: AppViewModel,
@@ -693,8 +733,17 @@ private fun MessageRow(
     showTime: Boolean,
     showSent: Boolean,
     onOpenMedia: (ChatMessage) -> Unit,
+    onReply: (ChatMessage) -> Unit,
+    onJump: (Long) -> Unit,
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
+    // Long-press a message to reply to it.
+    var menu by remember { mutableStateOf(false) }
+    val openMenu: () -> Unit = {
+        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        menu = true
+    }
     val reduceMotion = LocalReduceMotion.current
     val enter = remember { Animatable(if (animateIn && !reduceMotion) 0f else 1f) }
     LaunchedEffect(Unit) {
@@ -740,20 +789,51 @@ private fun MessageRow(
             .semantics(mergeDescendants = true) { contentDescription = spoken },
         horizontalAlignment = if (message.mine) Alignment.End else Alignment.Start,
     ) {
-        if (attachment != null) {
-            // A photo or video sits in the bubble with a small margin; a voice message brings its own padding.
-            val inset = if (attachment.kind == Constants.KIND_VOICE) 0.dp else 4.dp
-            Box(Modifier.glass(shape, tint).padding(inset)) {
-                AttachmentContent(vm, message, onOpenMedia)
+        // The box anchors the menu to the bubble.
+        Box {
+            if (attachment != null) {
+                // A photo or video sits in the bubble with a small margin; a voice message brings its own padding.
+                val inset = if (attachment.kind == Constants.KIND_VOICE) 0.dp else 4.dp
+                Box(Modifier.glass(shape, tint).padding(inset)) {
+                    AttachmentContent(vm, message, onOpenMedia, openMenu)
+                }
+            } else {
+                Column(
+                    Modifier
+                        .widthIn(max = 300.dp)
+                        .glass(shape, tint)
+                        .combinedClickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClickLabel = null,
+                            onLongClickLabel = stringResource(R.string.reply),
+                            onClick = {},
+                            onLongClick = openMenu,
+                        ),
+                ) {
+                    message.quote?.let { quote ->
+                        QuoteBlock(
+                            quote = quote,
+                            modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp),
+                            onClick = { quote.targetId?.let(onJump) },
+                        )
+                    }
+                    Text(
+                        text = message.text,
+                        // Short messages stay large; a paragraph at that size would fill the screen.
+                        style = (if (message.text.length <= 24) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge)
+                            .copy(fontWeight = FontWeight.Medium),
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                    )
+                }
             }
-        } else {
-            Box(Modifier.widthIn(max = 300.dp).glass(shape, tint)) {
-                Text(
-                    text = message.text,
-                    // Short messages stay large; a paragraph at that size would fill the screen.
-                    style = (if (message.text.length <= 24) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge)
-                        .copy(fontWeight = FontWeight.Medium),
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.reply)) },
+                    onClick = {
+                        menu = false
+                        onReply(message)
+                    },
                 )
             }
         }
@@ -792,6 +872,12 @@ private fun Composer(vm: AppViewModel) {
     }
     val showByteHint = byteLimitHit && vm.draft.isNotEmpty()
     val atLimit = count >= Constants.MAX_CHARS || showByteHint
+    // A reply is text: a photo or a voice message cannot carry the reference, so those wait until the reply is sent or dropped.
+    val replying = vm.replyingTo != null
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(vm.replyingTo?.id) {
+        if (vm.replyingTo != null) runCatching { focus.requestFocus() }
+    }
 
     // The system photo picker needs no storage permission: the app only ever sees what the person picks.
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -816,6 +902,7 @@ private fun Composer(vm: AppViewModel) {
     }
 
     Column(Modifier.fillMaxWidth()) {
+        vm.replyingTo?.let { ReplyBar(it, vm::cancelReply, Modifier.padding(top = 8.dp)) }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -831,13 +918,13 @@ private fun Composer(vm: AppViewModel) {
                 Box(
                     modifier = Modifier
                         .size(48.dp)
-                        .glassClickable(!vm.mediaBusy, Role.Button) {
+                        .glassClickable(!vm.mediaBusy && !replying, Role.Button) {
                             picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
                         }
                         .semantics { contentDescription = context.getString(R.string.media_attach) },
                     contentAlignment = Alignment.Center,
                 ) {
-                    TcIconView(TcIcon.Plus, if (vm.mediaBusy) Tc.InkFaint else Tc.Ink, Modifier.size(24.dp))
+                    TcIconView(TcIcon.Plus, if (vm.mediaBusy || replying) Tc.InkFaint else Tc.Ink, Modifier.size(24.dp))
                 }
                 TextField(
                     value = vm.draft,
@@ -867,7 +954,7 @@ private fun Composer(vm: AppViewModel) {
                         }
                         vm.onDraft(raw)
                     },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).focusRequester(focus),
                     // Up to 500 characters in a message: let the field grow to a few lines instead of scrolling sideways.
                     singleLine = false,
                     maxLines = 4,
@@ -886,7 +973,7 @@ private fun Composer(vm: AppViewModel) {
                     )
                     SendButton(fraction = fraction, enabled = true, label = stringResource(R.string.chat_send), onClick = ::send)
                 } else {
-                    MicButton(enabled = !vm.mediaBusy, label = stringResource(R.string.media_record), onClick = ::startVoice)
+                    MicButton(enabled = !vm.mediaBusy && !replying, label = stringResource(R.string.media_record), onClick = ::startVoice)
                 }
             }
         }

@@ -168,6 +168,27 @@ class RelayClient(base: String) {
             }
         }
 
+    /** Asks the relay's health page. Used only to wake a sleeping relay early; true if it answered. */
+    suspend fun ping(): Boolean = withContext(Dispatchers.IO) {
+        var conn: HttpURLConnection? = null
+        try {
+            conn = URL("$origin/v1/health").openConnection() as HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.instanceFollowRedirects = false
+            conn.useCaches = false
+            conn.connectTimeout = CONNECT_TIMEOUT_MS
+            conn.readTimeout = READ_TIMEOUT_MS // a sleeping relay can take most of a minute to answer
+            conn.setRequestProperty("User-Agent", Constants.USER_AGENT)
+            conn.responseCode in 200..299
+        } catch (e: IOException) {
+            false
+        } catch (e: RuntimeException) {
+            false
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
     /** Tells the relay the attachment is no longer needed (downloaded, or withdrawn). */
     suspend fun deleteBlob(room: String, token: String, id: String): Reply<Unit> =
         call("DELETE", room, "/blobs/$id", token, null) { }

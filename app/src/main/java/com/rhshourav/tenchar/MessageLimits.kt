@@ -22,9 +22,9 @@ object MessageLimits {
 
     fun utf8Length(text: String): Int = text.toByteArray(Charsets.UTF_8).size
 
-    /** True if [text] is one message: at most MAX_CHARS characters and MAX_MESSAGE_BYTES bytes. */
-    fun fits(text: String): Boolean =
-        graphemeCount(text) <= Constants.MAX_CHARS && utf8Length(text) <= Constants.MAX_MESSAGE_BYTES
+    /** True if [text] is one message: at most MAX_CHARS characters and [maxBytes] bytes (a reply allows fewer). */
+    fun fits(text: String, maxBytes: Int = Constants.MAX_MESSAGE_BYTES): Boolean =
+        graphemeCount(text) <= Constants.MAX_CHARS && utf8Length(text) <= maxBytes
 
     /** True if [text] fits in the composer, which holds up to ten messages. */
     fun fitsDraft(text: String): Boolean =
@@ -57,15 +57,15 @@ object MessageLimits {
      * whole. Spaces at a cut are dropped. Blank input gives no messages. A single character too large to
      * ever fit (thousands of combining marks) is dropped rather than looping.
      */
-    fun split(text: String): List<String> {
+    fun split(text: String, maxBytes: Int = Constants.MAX_MESSAGE_BYTES): List<String> {
         val parts = ArrayList<String>()
         var rest = text.trim()
         while (rest.isNotEmpty()) {
-            if (fits(rest)) {
+            if (fits(rest, maxBytes)) {
                 parts += rest
                 break
             }
-            val head = prefix(rest, Constants.MAX_CHARS, Constants.MAX_MESSAGE_BYTES)
+            val head = prefix(rest, Constants.MAX_CHARS, maxBytes)
             if (head.isEmpty()) {
                 rest = rest.substring(firstClusterEnd(rest)).trimStart()
                 continue

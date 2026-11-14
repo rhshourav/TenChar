@@ -10,6 +10,7 @@ import com.rhshourav.tenchar.store.Attachment
 import com.rhshourav.tenchar.store.Conversation
 import com.rhshourav.tenchar.store.Profile
 import com.rhshourav.tenchar.store.OutboxItem
+import com.rhshourav.tenchar.store.ReplyRef
 import com.rhshourav.tenchar.store.StateCodec
 import com.rhshourav.tenchar.store.StoredMessage
 import org.junit.Assert.assertEquals
@@ -188,9 +189,9 @@ class StateCodecTest {
     @Test
     fun theNewestVersionIsWrittenAndUnknownOnesAreRefused() {
         val bytes = enc(sample().first)
-        assertEquals(5, bytes[4].toInt()) // magic (4 bytes), then the version
-        // 0 is not a version, and 6 and above are from a newer app than this one.
-        for (version in listOf(0, 6, 7, 255)) {
+        assertEquals(6, bytes[4].toInt()) // magic (4 bytes), then the version
+        // 0 is not a version, and 7 and above are from a newer app than this one.
+        for (version in listOf(0, 7, 8, 255)) {
             try {
                 dec(bytes.copyOf().also { it[4] = version.toByte() })
                 assertTrue("accepted version $version", false)
@@ -263,6 +264,22 @@ class StateCodecTest {
         assertNull(back[0].attachment)
         // The file name on the relay and on this phone comes from the key, so it is the same after a restart.
         assertEquals(photo.id, Attachment(Constants.KIND_IMAGE, key, 1, 1, 1, 0, ByteArray(0), 0).id)
+    }
+
+    @Test
+    fun aReplyReferenceSurvives() {
+        val (c, _) = sample()
+        val hash = byteArrayOf(9, 8, 7)
+        c.messages.add(StoredMessage(3, "answer", true, Conversation.DELIVERY_SENT, 5L, null, ReplyRef(true, hash)))
+        c.messages.add(StoredMessage(4, "another", false, Conversation.DELIVERY_NONE, 6L, null, ReplyRef(false, hash)))
+        c.messages.add(StoredMessage(5, "plain", true, Conversation.DELIVERY_SENT, 7L))
+        val back = dec(enc(c)).conversations.single().messages
+        assertEquals(true, back[2].reply!!.quotedMine)
+        assertTrue(hash.contentEquals(back[2].reply!!.hash))
+        assertEquals(false, back[3].reply!!.quotedMine)
+        assertNull(back[4].reply)
+        assertNull(back[0].reply)
+        assertEquals("plain", back[4].text) // what follows a reply record is read from the right place
     }
 
     @Test
