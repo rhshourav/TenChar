@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">TenChar</string>
+    <string name="chat_counter" translatable="false">%1$d/%2$d</string>
+    <string name="enter_hint" translatable="false">XXXX-XXXX-XXXX-XXXX</string>
+    <string name="relay_hint" translatable="false">https://relay.example.com</string>
+
+    <string name="back">Back</string>
+    <string name="cancel">Cancel</string>
+    <string name="dialog_close">Close</string>
+
+    <string name="auth_title">Unlock TenChar</string>
+    <string name="auth_body">Confirm it is you to open your conversation.</string>
+
+    <string name="lockreq_title">Set a screen lock first</string>
+    <string name="lockreq_body">TenChar keeps its keys behind your phone\'s screen lock. Without a PIN, pattern or password it will not run.</string>
+    <string name="lockreq_open">Open security settings</string>
+
+    <string name="setup_title">Set up TenChar</string>
+    <string name="setup_body">Two quick choices before you start. You can change both later in Settings.</string>
+    <string name="setup_relays">Relays</string>
+    <string name="setup_relays_note">A relay passes encrypted messages between your phones. Using a backup relay keeps messages flowing if the main one is down, but a second relay also sees your IP address and timing.</string>
+    <string name="setup_continue">Continue</string>
+    <string name="fallback_label">Backup relay</string>
+    <string name="fallback_detail">Used if the main relay is down</string>
+    <string name="fallback_address">Backup relay address</string>
+
+    <string name="gate_title">Locked</string>
+    <string name="gate_body">Unlock to see your conversation.</string>
+    <string name="gate_unlock">Unlock</string>
+    <string name="gate_failed">Could not unlock. Try again.</string>
+    <string name="gate_use_lock">Use screen lock instead</string>
+    <string name="gate_detail">Detail from Android: %1$s</string>
+    <string name="gate_weak_sensor">Android rates this phone\'s fingerprint sensor as \"weak\". A weak sensor cannot unlock keys kept in secure hardware, so TenChar asks for your PIN, pattern or password.</string>
+
+    <string name="pair_title">Pair two phones</string>
+    <string name="pair_body">Make a one-time code on one phone and type it on the other. The code works once and is deleted after pairing.</string>
+    <string name="pair_make">Make a new code</string>
+    <string name="pair_have">I have a code</string>
+    <string name="notice_mismatch">The numbers did not match. The pairing was cancelled and its keys were deleted. Make a new code to try again.</string>
+    <string name="notice_forgotten">Conversation forgotten. Pair again to start a new one.</string>
+    <string name="notice_timeout">No phone answered with that code. Check the code, and that both phones use the same relays, then try again.</string>
+    <string name="notice_unreachable">Could not reach a relay. Check your connection and try again.</string>
+    <string name="notice_tampered">The relays gave different answers, or the other side\'s keys did not match its commitment. The pairing was cancelled for your safety.</string>
+    <string name="notice_full">That code has already been used by two phones. Make a new code.</string>
+    <string name="notice_storage">Could not save the keys on this phone. Try again.</string>
+
+    <string name="enter_title">Enter the code</string>
+    <string name="enter_invalid">That code is not valid. It has 16 letters and numbers.</string>
+    <string name="enter_join">Join</string>
+
+    <string name="waiting_title">Waiting for the other phone</string>
+    <string name="waiting_body">Type this code on the other phone within 24 hours. Share it only with that person, in person or over a channel you trust.</string>
+    <string name="waiting_copy">Copy code</string>
+    <string name="waiting_copied">Copied</string>
+    <string name="joining_title">Connecting</string>
+    <string name="joining_body">Checking the code and finding the other phone. The first connection can take up to a minute while a relay wakes up.</string>
+
+    <string name="verify_title">Check the number</string>
+    <string name="verify_body">Both phones must show the same number. Compare it by voice or in person, not by message through this app. This check is what protects you against a malicious relay.</string>
+    <string name="verify_match">Matches</string>
+    <string name="verify_mismatch">Doesn\'t match</string>
+
+    <string name="chat_title">Conversation</string>
+    <string name="chat_settings">Settings</string>
+    <string name="chat_empty">No messages yet. Say hello.</string>
+    <string name="chat_input_hint">Write a message</string>
+    <string name="chat_send">Send</string>
+    <string name="chat_limit_bytes">The message box is full. Send it, then keep writing.</string>
+    <string name="chat_split_hint">Too long for one message. It will be sent as %1$d messages.</string>
+    <string name="chat_offline">Offline. Messages will send when a relay can be reached.</string>
+    <string name="chat_gone">The relays no longer have this conversation. You may need to pair again.</string>
+    <string name="delivery_queued">Queued</string>
+    <string name="delivery_sent">Sent</string>
+    <string name="msg_from_you">You: %1$s</string>
+    <string name="msg_from_them">Them: %1$s</string>
+    <string name="reply">Reply</string>
+    <string name="reply_bar">Replying to %1$s</string>
+    <string name="reply_cancel">Cancel reply</string>
+    <string name="reply_missing">The original message is no longer available</string>
+    <string name="reply_video">Video</string>
+    <string name="reply_voice">Voice message</string>
+    <string name="day_today">Today</string>
+    <string name="day_yesterday">Yesterday</string>
+
+    <string name="media_attach">Attach a photo or video</string>
+    <string name="media_record">Record a voice message</string>
+    <string name="media_send_voice">Send voice message</string>
+    <string name="media_cancel_recording">Discard recording</string>
+    <string name="media_preparing">Preparing…</string>
+    <string name="media_photo">Photo</string>
+    <string name="media_video">Video, %1$s</string>
+    <string name="media_voice">Voice message, %1$s</string>
+    <string name="media_play">Play</string>
+    <string name="media_pause">Pause</string>
+    <string name="media_close">Close</string>
+    <string name="media_retry">Could not load. Tap to try again.</string>
+    <string name="media_retry_send">Could not send. Tap to try again.</string>
+    <string name="media_retry_short">Retry</string>
+    <string name="media_unavailable">Unavailable</string>
+    <string name="media_notice_too_long">Videos can be up to 30 seconds. Trim it in your gallery and try again.</string>
+    <string name="media_notice_too_big">That file is too big to send.</string>
+    <string name="media_notice_too_short">Too short. Record a little longer.</string>
+    <string name="media_notice_unsupported">That file cannot be sent. Try a photo or a video.</string>
+    <string name="media_notice_failed">Could not prepare that. Try again.</string>
+    <string name="media_notice_mic_busy">The microphone is not available right now.</string>
+    <string name="media_notice_relay">Your relay cannot carry photos, voice messages or video yet (it needs the updated relay), or it no longer has this chat. Update the relay, then tap the message to try again.</string>
+    <string name="media_notice_mic_denied">Allow the microphone in system settings to record voice messages.</string>
+
+    <string name="settings_title">Settings</string>
+    <string name="settings_autolock">Lock after leaving the app</string>
+    <string name="lock_immediately">Immediately</string>
+    <string name="lock_30s">After 30 seconds</string>
+    <string name="lock_5m">After 5 minutes</string>
+    <string name="settings_section_alerts">Alerts</string>
+    <string name="settings_section_chats">Chats and network</string>
+    <string name="alerts_label">Message alerts</string>
+    <string name="alerts_detail">A quiet background service checks your relays and shows “New message”. No Google or push server is involved.</string>
+    <string name="alerts_interval">Check every</string>
+    <string name="alerts_30s">30 seconds</string>
+    <string name="alerts_1m">1 minute</string>
+    <string name="alerts_5m">5 minutes</string>
+    <string name="alerts_battery">Allow background activity</string>
+    <string name="alerts_battery_detail">Many phones need this to keep alerts arriving while the screen is off.</string>
+    <string name="alerts_blocked">Notifications are blocked</string>
+    <string name="alerts_blocked_detail">Allow notifications for TenChar in system settings to see alerts.</string>
+    <string name="alerts_privacy">An alert says only “New message”: never who sent it, which chat, or what it says. The service cannot open your chats, which stay locked.</string>
+    <string name="notify_channel_messages">New messages</string>
+    <string name="notify_channel_service">Background connection</string>
+    <string name="notify_service_title">Checking for messages</string>
+    <string name="notify_service_text">TenChar asks your relays whether a message is waiting. Tap to open.</string>
+    <string name="notify_message_text">New message</string>
+    <string name="settings_show_number">Show verification number</string>
+    <string name="settings_relay">Relay address</string>
+    <string name="relay_title">Relay address</string>
+    <string name="relay_body">Both phones must use the same relay, or they cannot pair. The relay cannot read your messages, but it can see your IP address and when you connect.</string>
+    <string name="relay_change_note">Changing these applies to chats you pair from now on. Each chat keeps the relays it was paired on.</string>
+    <string name="relay_invalid">Enter an https address such as https://relay.example.com, with no username, path or query.</string>
+    <string name="relay_save">Save</string>
+    <string name="relay_reset">Use the default relay</string>
+    <string name="settings_about">About and limits</string>
+    <string name="settings_forget">Forget conversation</string>
+    <string name="forget_confirm_title">Forget this conversation?</string>
+    <string name="forget_confirm_body">Messages and keys on this phone are deleted. You will need to pair again. This cannot be undone.</string>
+    <string name="forget_confirm_yes">Forget</string>
+
+    <string name="about_title">About TenChar</string>
+    <string name="about_intro">A private end-to-end encrypted messenger. Each chat is between two people, and a message can be up to 500 characters; longer text is sent as several messages. You can also send photos, voice messages and short videos.</string>
+    <string name="about_status">Every message is encrypted on your phone with a Double Ratchet, and the relay only ever holds ciphertext. Photos, voice messages and videos are encrypted on your phone with a key of their own before they are uploaded, and photos are stripped of location and camera data. Optional alerts come from a small background service in this app: no Google or third-party push service is involved.</string>
+    <string name="about_review">The cryptography is composed by hand from standard primitives (X25519, HKDF, AES-GCM). It is open source but has not been independently reviewed. Do not rely on it where a mistake could put someone in danger.</string>
+    <string name="about_not_title">What TenChar will not protect against</string>
+    <string name="about_not_1">Malware or a compromised OS on an unlocked phone, screen readers, and accessibility services with permission.</string>
+    <string name="about_not_2">A third-party keyboard that records what you type.</string>
+    <string name="about_not_3">Metadata: the relay and Cloudflare can see IP addresses, timing, message counts and sizes. The app does not hide your IP.</string>
+    <string name="about_not_4">The other person keeping, screenshotting or forwarding what you send.</string>
+    <string name="about_not_5">Denial of service, and relay availability.</string>
+    <string name="about_not_6">A weak lock screen on the phone.</string>
+    <string name="about_not_7">Message length: a longer message needs more encrypted pieces, so a relay can see roughly how long each message is.</string>
+    <string name="about_not_8">Attachments and alerts: the relay can see that you sent a photo, voice message or video, when, and roughly how big it was (rounded up to 16 KiB), never what is in it. With alerts on, it can see which chats this phone checks and how often.</string>
+
+    <string name="keys_reset_title">Keys were reset</string>
+    <string name="keys_reset_body">TenChar could not open your saved chats.</string>
+    <string name="keys_reset_detail">Technical detail: %1$s</string>
+    <string name="chats_title">Chats</string>
+    <string name="chats_new">New chat</string>
+    <string name="chat_unnamed">Chat %1$d</string>
+    <string name="chat_unverified">Not verified yet</string>
+    <string name="chat_settings_title">Chat settings</string>
+    <string name="profile_you">You</string>
+    <string name="profile_them">Them</string>
+    <string name="profile_none">No name yet</string>
+    <string name="profile_title_you">Your name and avatar</string>
+    <string name="profile_title_them">How you see them</string>
+    <string name="profile_name_hint">Name</string>
+    <string name="profile_avatar">Avatar</string>
+    <string name="profile_avatar_hint">Or type your own emoji</string>
+    <string name="profile_use_initial">Use the first letter instead</string>
+    <string name="profile_colour">Colour</string>
+    <string name="profile_reset_them">Use the name they chose</string>
+    <string name="profile_share_note">Your name and avatar are sent to them, end-to-end encrypted. How you see them stays on this phone.</string>
+    <string name="settings_default_profile">My name and avatar</string>
+    <string name="chat_relays">Relays for this chat</string>
+    <string name="relay_for_chat">Relay for this chat</string>
+    <string name="notice_too_many">You have reached the limit of 20 chats. Forget one to add another.</string>
+    <string name="lost_key_invalidated">Android removed the key that protects your chats. This usually happens when the screen lock is removed or reset.</string>
+    <string name="lost_key_missing">The key that protects your chats is no longer on this phone.</string>
+    <string name="lost_vault_damaged">The file that holds your chat key is damaged.</string>
+    <string name="lost_state_unreadable">Your chats are stored here, but none of the saved copies could be read.</string>
+    <string name="keys_reset_kept">Nothing has been deleted. Try again, or erase everything and pair again.</string>
+    <string name="keys_reset_retry">Try again</string>
+    <string name="keys_reset_erase">Erase and start over</string>
+    <string name="erase_confirm_title">Erase everything?</string>
+    <string name="erase_confirm_body">All chats on this phone are deleted. The other people keep their copy. This cannot be undone.</string>
+    <string name="erase_confirm_yes">Erase</string>
+</resources>

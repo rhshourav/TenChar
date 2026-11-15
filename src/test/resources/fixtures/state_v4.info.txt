@@ -1,0 +1,6 @@
+room=0102030405060708090a0b0c0d0e0f10
+memberId=b693fc7c5b9df72b2322e95fe56f7d19
+memberToken=711c9e3da3ed78233ca1f3d01220a97eda82034f240d8ce4e05b7e3e36698bb8
+verification=7635 0316
+afterText=after four
+localId=b0492206d33b6b7f
