@@ -50,7 +50,7 @@ class ReplyTest {
         val d = Wire.decodeFrame(frames[0]) as Wire.Decoded.Text
         assertEquals("yes, 8 pm", d.text)
         assertEquals(1, d.reply!!.who)
-        assertTrue(hash.contentEquals(d.reply!!.hash))
+        assertTrue(hash.contentEquals(d.reply.hash))
     }
 
     @Test

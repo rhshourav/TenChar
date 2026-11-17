@@ -47,14 +47,13 @@ internal fun QuoteBlock(quote: QuoteUi, modifier: Modifier = Modifier, onClick: 
     val who = stringResource(if (quote.mine) R.string.profile_you else R.string.profile_them)
     val body = if (quote.targetId == null) stringResource(R.string.reply_missing) else snippetOf(quote.kind, quote.text)
     val accent = if (quote.mine) Tc.Mint else Tc.Peach
-    val jump = onClick != null && quote.targetId != null
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
             .clip(RoundedCornerShape(12.dp))
             .background(Color.White.copy(alpha = 0.09f))
-            .then(if (jump) Modifier.clickable(role = Role.Button, onClick = onClick!!) else Modifier),
+            .then(if (onClick != null && quote.targetId != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier),
     ) {
         Box(Modifier.width(3.dp).fillMaxHeight().background(accent))
         Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
